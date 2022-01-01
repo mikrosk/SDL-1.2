@@ -19,53 +19,34 @@
     Sam Lantinga
     slouken@libsdl.org
 */
+#include "SDL_config.h"
 
 /*
- *	Read EdDI version
+ *	XBRA protocol
  *
- *	Patrice Mandin
+ *	Miro Kropacek
  */
 
-	.text
+#ifndef _SDL_ATARI_XBRA_H_
+#define _SDL_ATARI_XBRA_H_
 
-	.globl	_Atari_get_EdDI_version
+#include "SDL_stdinc.h"
 
-/*--- Vector installer ---*/
+typedef void (*XbraHandler) (void);
 
-_Atari_get_EdDI_version:
-#if defined(__mcoldfire__)
-	movel	sp@(4),a0
-	movel	a0,eddi_cookie
-	lea	sp@(-8),sp
-	moveml	d2/a2,sp@
-#else
-	movel	sp@(4),eddi_cookie
-	moveml	d2/a2,sp@-
-#endif
+typedef struct xbra
+{
+	Uint32		xbra_id;
+	Uint32		app_id;
+	XbraHandler	oldvec;
+} XBRA;
 
-	/* Supexec() to avoid crash on FreeMiNT with MP */
-	pea	get_EdDI_version(pc)
-	movew	#38,sp@-
-	trap	#14
-	addql	#6,sp
+/* Const */
 
-#if defined(__mcoldfire__)
-	moveml	sp@,d2/a2
-	lea	sp@(8),sp
-#else
-	moveml	sp@+,d2/a2
-#endif
-	rts
+#define XBRA_ID	0x58425241UL /* 'XBRA' */
 
-get_EdDI_version:
-	movel	eddi_cookie,a0
+/* Functions */
 
-	/* Call EdDI function #0 */
-	clrw	d0
-	jmp	(a0)
+extern XbraHandler Atari_UnhookXbra(Uint32 vecnum, Uint32 app_id, XbraHandler handler);
 
-	.bss
-
-	.even
-eddi_cookie:
-	.ds.l	1
+#endif /* _SDL_ATARI_XBRA_H_ */
