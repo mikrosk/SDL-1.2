@@ -46,7 +46,7 @@
 
 /* Duration after which we consider key released */
 
-long KEY_PRESS_DURATION=100L;
+long KEY_PRESS_DURATION=60L;
 
 #define MSG_SDL_ID	(('S'<<8)|'D')
 
@@ -84,47 +84,73 @@ void GEM_InitOSKeymap(_THIS)
 
 static int game_kbd;
 
+extern short __SDL_GEM_HIDE_C_OPTION;
 
 void GEM_PumpEvents(_THIS)
 {
 	short prevkc=0/*, mousex, mousey*/, mouseb, kstate;
 	int i, quit = 0;
 	static int first=1;
-	static long temps=1000L;
+	static long temps=20L,temps2=60L;
 	SDL_keysym keysym;
 	Uint32 cur_tick;
 	static Uint32 prev_now = 0, prev_msg = 0;
-	static short latest_msg_id = 0;
+	static short latest_msg_id = 0, oldmousex,oldmousey,oldmouseb;
+	int addevent=MU_TIMER;
+
+
+
+
+
+
 
 	cur_tick = SDL_GetTicks();
+
+
+        if ( ((SDL_GetAppState() & SDL_APPINPUTFOCUS))/*|| !(__SDL_GEM_HIDE_C_OPTION&1)*/)
+	{
 	if (cur_tick - prev_now < 20L ) {
+			if((__SDL_GEM_HIDE_C_OPTION&1)&&(cur_tick-prev_msg < KEY_PRESS_DURATION-20))
+			{
+				if(game_kbd) Fselect(5,0,0,0);
+			}
+
 		return;
 	}
+
 	prev_now = cur_tick;
 
+/*	clearKeyboardState(cur_tick);*/
 	SDL_AtariMint_BackgroundTasks();
-/*	clearKeyboardState(cur_tick);
-*/
-
-
-
 	/* Update mouse state */
+
 	graf_mkstate(&GEM_mouse_x, &GEM_mouse_y, &mouseb, &kstate);
 	do_keyboard_special(kstate, cur_tick);
 	do_mouse_motion(this, GEM_mouse_x, GEM_mouse_y);
 	do_mouse_buttons(this, mouseb);
 
+
+
+
 		/* Wait at least 20ms before each event processing loop */
-        if ((cur_tick-prev_msg < KEY_PRESS_DURATION/*20*/)) {
+
+	        if (cur_tick-prev_msg < KEY_PRESS_DURATION/*20*/) {
+ 			if(__SDL_GEM_HIDE_C_OPTION&1) evnt_timer(10L);
 			return;
 		}
 
         GEM_CheckMouseMode(this);
 
-	prev_msg = cur_tick;
          if(first)
-         {        first=0;
+         	{	short apgout1, dummy;
+	 		first=0;
+         		appl_getinfo(65,&apgout1,&dummy,&dummy,&dummy);
+
+       			if(apgout1==1)
+       			{
+		/*  Cconws("avant appl_control\015\012"); */
                   game_kbd=appl_control(GEM_ap_id,17,"app_game_kbd");      /* fast keyboard for MyAES */
+         /*         Cconws("après appl_control\015\012"); */
                   if(game_kbd)
                   {
                   	temps=0L;
@@ -132,26 +158,43 @@ void GEM_PumpEvents(_THIS)
 	}
          }
 
+         	}
+
+
+
+#if 0
 	dummy_msgbuf[1] = ++latest_msg_id;
-	 	if (!game_kbd && (appl_write(GEM_ap_id, sizeof(dummy_msgbuf), dummy_msgbuf) == 0)) {
+	 	if ( (!game_kbd) && (appl_write(GEM_ap_id, sizeof(dummy_msgbuf), dummy_msgbuf) == 0)) {
 		/* If it fails, wait for previous id */
 		--latest_msg_id;
+
+	 	}
+#endif
+		temps2 = temps;
 	}
+        else temps2=60L;
+        prev_msg = cur_tick;
+
+
+
+
+
 	while (!quit) {
 		int resultat;
-		short buffer[8], kc, dummy;
+			short buffer[8], kc, mc=0;
+			static short mstatedo=0;
 
 
 		resultat = evnt_multi(
-			MU_MESAG|MU_TIMER|MU_KEYBD,
-			0,0,0,
+			MU_MESAG|MU_KEYBD|MU_TIMER|MU_BUTTON ,
+			1,1,mstatedo,
 			0,0,0,0,0,
 			0,0,0,0,0,
 			buffer,
-			temps,
-			&GEM_mouse_x,&GEM_mouse_y,&mouseb,&kstate,&kc,&dummy
+			temps2,
+			&GEM_mouse_x,&GEM_mouse_y,&mouseb,&kstate,&kc,&mc
 		);
-
+		do_mouse_motion(this, GEM_mouse_x, GEM_mouse_y);
 		/* Message event ? */
 		if (resultat & MU_MESAG)
 			quit = do_messages(this, buffer, latest_msg_id);
@@ -160,14 +203,30 @@ void GEM_PumpEvents(_THIS)
 		if (resultat & MU_KEYBD) {
 		/*	do_keyboard_special(kstate, cur_tick);  */
 				do_keyboard(kc, cur_tick);
+		        quit = 1;
 		}
 
 		/* Timer event ? Just used as a safeguard */
 		if (resultat & MU_TIMER) {
 			quit = 1;
 		}
+#if 0
+                   if (resultat & MU_M1) {
+			do_mouse_motion(this, GEM_mouse_x, GEM_mouse_y);
+			quit = 1;
+		  }
+#endif
+		  if ((resultat & MU_BUTTON)) {
+		/*	do_mouse_buttons(this, mouseb);*/
+		/*	mstatedo=1; */
+			quit = 1;
+		  }
+/*		  else mstatedo=0;*/
+ 		do_mouse_buttons(this, mouseb);
 
+		SDL_AtariMint_BackgroundTasks();
 	}
+
 		clearKeyboardState(cur_tick);
 	/* Now generate keyboard events */
 	for (i=0; i<ATARIBIOS_MAXKEYS; i++) {
@@ -250,6 +309,7 @@ static int do_messages(_THIS, short *message, short latest_msg_id)
 			wind_set(message[3],WF_ICONIFY,message[4],message[5],message[6],message[7]);
 			GEM_state |=1;
 			/* If we're active, make ourselves inactive */
+			SDL_PrivateAppActive(0, SDL_APPINPUTFOCUS);
 			if ( SDL_GetAppState() & SDL_APPACTIVE ) {
 				/* Send an internal deactivate event */
 				SDL_PrivateAppActive(0, SDL_APPACTIVE);
@@ -265,6 +325,7 @@ static int do_messages(_THIS, short *message, short latest_msg_id)
 			wind_set(message[3],WF_UNICONIFY,message[4],message[5],message[6],message[7]);
 			GEM_state&=~1;
 			/* If we're not active, make ourselves active */
+			SDL_PrivateAppActive(1, SDL_APPINPUTFOCUS);
 			if ( !(SDL_GetAppState() & SDL_APPACTIVE) ) {
 				/* Send an internal activate event */
 				SDL_PrivateAppActive(1, SDL_APPACTIVE);
@@ -385,6 +446,10 @@ static void do_keyboard_special(short ks, Uint32 tick)
 static void do_mouse_motion(_THIS, short mx, short my)
 {
 	short x2, y2, w2, h2;
+	static short oldmx=0,oldmy=0;
+	if((oldmx==mx)&&(oldmy==my)) return;
+	oldmx=mx;
+	oldmy=my;
 	if (this->input_grab == SDL_GRAB_OFF) {
 		/* Switch mouse focus state */
 		if (!GEM_fullscreen && (GEM_handle>=0)) { short insidemouse[4]={mx,my,1,1}, workarea[4]={GEM_work_x, GEM_work_y, GEM_work_w, GEM_work_h}; 

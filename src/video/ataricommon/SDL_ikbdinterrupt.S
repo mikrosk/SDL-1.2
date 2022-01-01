@@ -50,7 +50,7 @@ _SDL_AtariIkbdInstall:
 #endif
 
 	| Disable interrupts
-
+	movew	sr,d1
 	movew	#0x2700,sr
 
 	| Save MFP registers used for keyboard
@@ -98,8 +98,8 @@ _SDL_AtariIkbdInstall:
 #endif
 
 	| Reenable interrupts
-
-	movew	#0x2300,sr
+	movew	d1,sr
+/*	movew	#0x2300,sr */
 
 	| Interrupts done
 
@@ -122,7 +122,7 @@ _SDL_AtariIkbdUninstall:
 	movel	a0,sp@-
 
 	| Disable interrupts
-
+	movew	sr,d1
 	movew	#0x2700,sr
 
 	| Restore previous MFP registers
@@ -159,8 +159,8 @@ ikbd_videbuffer:
 ikbd_finbuffer:
 
 	| Reenable interrupts
-
-	movew	#0x2300,sr
+	movew	d1,sr
+/*	movew	#0x2300,sr */
 
 	movel	sp@+,a0
 	rts

@@ -75,7 +75,7 @@ static void Atari_InitializeEvents(_THIS)
 
 	/* Default is Ikbd, the faster except for clones */
 	switch(cookie_mch) {
-		case MCH_ST:
+	/*	case MCH_ST:
 		case MCH_STE:
 		case MCH_TT:
 		case MCH_F30:
@@ -83,7 +83,7 @@ static void Atari_InitializeEvents(_THIS)
 			this->InitOSKeymap=AtariIkbd_InitOSKeymap;
 			this->PumpEvents=AtariIkbd_PumpEvents;
 			Atari_ShutdownEvents=AtariIkbd_ShutdownEvents;
-			break;
+			break;*/
 		default:
 			this->InitOSKeymap=AtariGemdos_InitOSKeymap;
 			this->PumpEvents=AtariGemdos_PumpEvents;

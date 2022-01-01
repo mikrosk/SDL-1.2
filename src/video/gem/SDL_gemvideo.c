@@ -125,12 +125,27 @@ static void GEM_DeleteDevice(SDL_VideoDevice *device)
 	SDL_free(device);
 }
 
+SDL_VideoDevice *XBIOS_CreateDevice(int devindex);
+
 static SDL_VideoDevice *GEM_CreateDevice(int devindex)
 {
 	SDL_VideoDevice *device;
 	int vectors_mask;
 /*	unsigned long dummy;*/
-
+#if 0
+	if(SDL_getenv("SDL_VIDEODRIVER")==NULL) /* search of the best configuration for games if driver not set in configuration */
+	{ int appid; short myglobal[15];
+		appid = mt_appl_init(myglobal);
+		if(appid!=-1)
+		{
+			mt_appl_exit(myglobal);
+		}
+		if((appid==-1)||(myglobal[1]!=-1) ) /* if not multitos or AES not find*/
+		{
+			return XBIOS_CreateDevice(devindex);
+		}
+	}
+#endif
 	/* Initialize all variables that we clean on shutdown */
 	device = (SDL_VideoDevice *)SDL_malloc(sizeof(SDL_VideoDevice));
 	if ( device ) {
@@ -194,13 +209,16 @@ static SDL_VideoDevice *GEM_CreateDevice(int devindex)
 		(SDL_AtariDevMouse_Open()!=0) ? SDL_TRUE : SDL_FALSE;
 
 	vectors_mask = ATARI_XBIOS_JOYSTICKEVENTS;	/* XBIOS joystick events */
+
 	if (!(device->hidden->use_dev_mouse)) {
 		vectors_mask |= ATARI_XBIOS_MOUSEEVENTS;	/* XBIOS mouse events */
 	}
+
 /*	if (Getcookie(C_MiNT, &dummy)==C_FOUND) {
 		vectors_mask = 0;
 	}*/
 
+	
 	SDL_AtariXbios_InstallVectors(vectors_mask);
 
 
@@ -553,7 +571,7 @@ static void GEM_LockScreen(_THIS)
 	if (!GEM_locked) {
 		/* Lock AES */
 		wind_update(BEG_UPDATE);
-		wind_update(BEG_MCTRL);
+	/*	wind_update(BEG_MCTRL);*/
 		/* Reserve memory space, used to be sure of compatibility */
 		form_dial( FMD_START, 0,0,0,0, 0,0,VDI_w,VDI_h);
 
@@ -613,7 +631,7 @@ static void GEM_UnlockScreen(_THIS)
 		/* Restore screen memory, and send REDRAW to all apps */
 		form_dial( FMD_FINISH, 0,0,0,0, 0,0,VDI_w,VDI_h);
 		/* Unlock AES */
-		wind_update(END_MCTRL);
+	/*	wind_update(END_MCTRL);*/
 		wind_update(END_UPDATE);
 
 		GEM_locked=SDL_FALSE;

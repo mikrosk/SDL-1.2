@@ -63,14 +63,14 @@ void SDL_StartTicks(void)
 	long dummy;
 
 	/* Set first ticks value, one _hz_200 tic is 5ms */
-	start = readHz200Timer() * 5;
+	start = readHz200Timer();
 }
 
 Uint32 SDL_GetTicks (void)
 {
-	Uint32 now = readHz200Timer() * 5;
+	Uint32 now = readHz200Timer() ;
 
-	return(now-start);
+	return((now-start) * 5);
 }
 
 void SDL_Delay (Uint32 ms)

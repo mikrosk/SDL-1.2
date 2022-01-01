@@ -33,26 +33,57 @@
 #include "../SDL_sysvideo.h"
 
 #include "SDL_xbios.h"
+#include <gem.h>
+
 
 static const xbiosmode_t ttmodes[]={
 	{TT_LOW,320,480,8, XBIOSMODE_C2P},
 	{TT_LOW,320,240,8, XBIOSMODE_C2P|XBIOSMODE_DOUBLELINE}
 };
 
+static xbiosmode_t vdimode[]={
+	{0,320,480,16, 0}
+};
 static void listModes(_THIS, int actually_add);
 static void saveMode(_THIS, SDL_PixelFormat *vformat);
 static void setMode(_THIS, xbiosmode_t *new_video_mode);
 static void restoreMode(_THIS);
+static void listModesVDI(_THIS, int actually_add);
+static void saveModeVDI(_THIS, SDL_PixelFormat *vformat);
+static void setModeVDI(_THIS, xbiosmode_t *new_video_mode);
+static void restoreModeVDI(_THIS);
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors);
 
 void SDL_XBIOS_VideoInit_TT(_THIS)
-{
+{	short work_in[12], work_out[272],vdihandle,i;
 	XBIOS_listModes = listModes;
 	XBIOS_saveMode = saveMode;
 	XBIOS_setMode = setMode;
 	XBIOS_restoreMode = restoreMode;
 
 	this->SetColors = setColors;
+	
+	work_in[0]=Getrez()+2;
+	for(i = 1; i < 10; i++)
+		work_in[i] = 1;
+	work_in[10] = 2;
+
+	v_opnvwk(work_in, &vdihandle, work_out);
+	if (vdihandle != 0) {
+		vdimode[0].width =  work_out[0] + 1;
+		vdimode[0].height = work_out[1] + 1;
+		vq_extnd(vdihandle, 1, work_out);
+		vdimode[0].depth = work_out[4];
+		if((vdimode[0].depth>8)&&(vdimode[0].width>=320)&&(vdimode[0].height>=480))
+		{
+			XBIOS_listModes = listModesVDI;
+			XBIOS_saveMode = saveModeVDI;
+			XBIOS_setMode = setModeVDI;
+			XBIOS_restoreMode = restoreModeVDI;
+		}
+		v_clsvwk(vdihandle);
+	}
+
 }
 
 static void listModes(_THIS, int actually_add)
@@ -62,6 +93,13 @@ static void listModes(_THIS, int actually_add)
 	for (i=0; i<sizeof(ttmodes)/sizeof(xbiosmode_t); i++) {
 		SDL_XBIOS_AddMode(this, actually_add, &ttmodes[i]);
 	}
+}
+
+static void listModesVDI(_THIS, int actually_add)
+{
+
+
+	SDL_XBIOS_AddMode(this, actually_add, &vdimode[0]);
 }
 
 static void saveMode(_THIS, SDL_PixelFormat *vformat)
@@ -91,11 +129,20 @@ static void saveMode(_THIS, SDL_PixelFormat *vformat)
 	}
 }
 
+static void saveModeVDI(_THIS, SDL_PixelFormat *vformat)
+{
+	
+}
+
 static void setMode(_THIS, xbiosmode_t *new_video_mode)
 {
 	Setscreen(-1,XBIOS_screens[0],-1);
 
 	EsetShift(new_video_mode->number);
+}
+
+static void setModeVDI(_THIS, xbiosmode_t *new_video_mode)
+{
 }
 
 static void restoreMode(_THIS)
@@ -106,6 +153,11 @@ static void restoreMode(_THIS)
 	if (XBIOS_oldnumcol) {
 		EsetPalette(0, XBIOS_oldnumcol, XBIOS_oldpalette);
 	}
+}
+
+static void restoreModeVDI(_THIS)
+{
+
 }
 
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)

@@ -45,7 +45,7 @@ _SDL_AtariXbios_Install:
 	movel	sp@(4),a0
 
 	/* Stop interrupts */
-
+	movew	sr,d1
 	movew	#0x2700,sr
 
 	/* Save old mouse vector, set our routine */
@@ -78,7 +78,8 @@ no_new_joystick_vector:
 
 	/* Restart interrupts */
 
-	movew	#0x2300,sr
+	movew	d1,sr
+/*	movew	#0x2300,sr */
 
 	rts
 
@@ -88,7 +89,7 @@ _SDL_AtariXbios_Restore:
 	movel	sp@(4),a0
 
 	/* Stop interrupts */
-
+	movew	sr,d1
 	movew	#0x2700,sr
 
 	/* Restore mouse vector */
@@ -106,8 +107,8 @@ no_restore_mouse:
 no_restore_joystick:
 
 	/* Restart interrupts */
-
-	movew	#0x2300,sr
+	movew	d1,sr
+/*	movew	#0x2300,sr */
 
 	rts
 

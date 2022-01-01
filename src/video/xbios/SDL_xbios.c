@@ -152,7 +152,7 @@ static void XBIOS_DeleteDevice(SDL_VideoDevice *device)
 	SDL_free(device);
 }
 
-static SDL_VideoDevice *XBIOS_CreateDevice(int devindex)
+/*static*/ SDL_VideoDevice *XBIOS_CreateDevice(int devindex)
 {
 	SDL_VideoDevice *device;
 	long cookie_cvdo;
