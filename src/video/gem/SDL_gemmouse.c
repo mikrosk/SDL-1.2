@@ -169,6 +169,7 @@ void GEM_CheckMouseMode(_THIS)
 {
 	const Uint8 full_focus = (SDL_APPACTIVE|SDL_APPINPUTFOCUS|SDL_APPMOUSEFOCUS);
 	int set_system_cursor = 1;
+	static WMcursor *last_cursor=NULL;
 	
 	SDL_bool hide_system_cursor = SDL_FALSE;
 
@@ -185,10 +186,16 @@ void GEM_CheckMouseMode(_THIS)
 		/* Application defined cursor only over the application window */
 		if ((SDL_GetAppState() & full_focus) == full_focus) {
 			if (GEM_cursor) {
+				if(last_cursor!=GEM_cursor) 
+                                {
 				graf_mouse(USER_DEF, GEM_cursor->mform_p);
+				   last_cursor = GEM_cursor;
+                                }
 				set_system_cursor = 0;
+
 			} else {
 				hide_system_cursor = SDL_TRUE;
+				 last_cursor = NULL;
 			}
 		}
 	} else {
@@ -196,6 +203,7 @@ void GEM_CheckMouseMode(_THIS)
 		if ((SDL_GetAppState() & full_focus) == full_focus) {
 			set_system_cursor = 0;
 			hide_system_cursor = SDL_TRUE;
+			last_cursor = NULL;
 		}
 	}
 
