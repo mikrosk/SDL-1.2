@@ -28,8 +28,8 @@
 
 	.text
 
-	.globl	_SDL_AtariIkbdInstall
-	.globl	_SDL_AtariIkbdUninstall
+	.globl	_SDL_AtariIkbd_Install
+	.globl	_SDL_AtariIkbd_Restore
 
 	.globl	_SDL_AtariIkbd_keyboard
 	.globl	_SDL_AtariIkbd_mouseb
@@ -41,14 +41,7 @@
 
 /*--- Install our IKBD vector ---*/
 
-_SDL_AtariIkbdInstall:
-#if defined(__mcoldfire__)
-	lea	sp@(-16),sp
-	moveml	d0-d1/a0-a1,sp@
-#else
-	moveml	d0-d1/a0-a1,sp@-
-#endif
-
+_SDL_AtariIkbd_Install:
 	| Disable interrupts
 
 	movew	sr,d1
@@ -107,21 +100,29 @@ _SDL_AtariIkbdInstall:
 #if defined(__mcoldfire__)
 	movel	#0xffff,d0
 	movew	d0,_SDL_AtariIkbd_enabled
-
-	moveml	sp@,d0-d1/a0-a1
-	lea	sp@(16),sp
 #else
 	movew	#0xffff,_SDL_AtariIkbd_enabled
-
-	moveml	sp@+,d0-d1/a0-a1
 #endif
 	rts
 
 /*--- Uninstall our IKBD vector ---*/
 
-_SDL_AtariIkbdUninstall:
-	movel	a0,sp@-
+_SDL_AtariIkbd_Restore:
+	tstw	_SDL_AtariIkbd_enabled
+	bnes	ikbd_installed
+	rts
 
+ikbd_installed:
+        /*
+         * even though SDL_AtariXbios_Restore() is called via Supexec(),
+         * it is also a etv_term vector which needs to preserve all registers
+         */
+#if defined(__mcoldfire__)
+        lea	sp@(-8),sp
+        moveml	d1/a0,sp@
+#else
+        moveml	d1/a0,sp@-
+#endif
 	| Disable interrupts
 
 	movew	sr,d1
@@ -164,7 +165,16 @@ ikbd_finbuffer:
 
 	movew	d1,sr
 
-	movel	sp@+,a0
+	| Interrupts done
+
+	clrw	_SDL_AtariIkbd_enabled
+
+#if defined(__mcoldfire__)
+        moveml	sp@,d1-/a0
+        lea	sp@(8),sp
+#else
+        moveml	sp@+,d1/a0
+#endif
 	rts
 
 	.bss
