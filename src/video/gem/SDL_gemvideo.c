@@ -760,6 +760,10 @@ SDL_Surface *GEM_SetVideoMode(_THIS, SDL_Surface *current,
 			x2 += GEM_desk_x;
 			y2 += GEM_desk_y;
 
+			wind_calc(WC_WORK,GEM_win_type, x2,y2,w2,h2, &x2,&y2,&w2,&h2);
+				x2=x2-(x2%8);   /* speed up redraw under VDI */
+			wind_calc(WC_BORDER, GEM_win_type, x2,y2,w2,h2, &x2,&y2,&w2,&h2);
+
 			/* Destroy existing window */
 			if (GEM_handle >= 0) {
 				wind_close(GEM_handle);
@@ -1159,7 +1163,7 @@ void GEM_VideoQuit(_THIS)
 void GEM_wind_redraw(_THIS, int winhandle, short *inside)
 {
 	short todo[4];
-	short insidemouse[4] = {GEM_mouse_x,GEM_mouse_y,1,1};
+/*	short insidemouse[4] = {GEM_mouse_x,GEM_mouse_y,1,1};  */
 	/* Tell AES we are going to update */
 /*	wind_update(BEG_UPDATE);*/
 
@@ -1224,7 +1228,7 @@ static void refresh_window(_THIS, int winhandle, short *rect)
 		
 		surface = GEM_icon;
 
-		GEM_ClearRect(this, rect);
+	/*	GEM_ClearRect(this, rect);    */
 
 		/* Calculate centered icon(x,y,w,h) relative to window */
 

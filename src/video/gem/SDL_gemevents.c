@@ -206,7 +206,6 @@ void GEM_PumpEvents(_THIS)
 static int do_messages(_THIS, short *message, short latest_msg_id)
 {
 	int quit;
-	short x2,y2,w2,h2;
 
 	quit = 0;
 	switch (message[0]) {
@@ -219,8 +218,18 @@ static int do_messages(_THIS, short *message, short latest_msg_id)
 			quit=1;
 			break;
 		case WM_MOVED:
-			wind_set(message[3],WF_CURRXYWH,message[4],message[5],message[6],message[7]);
+			{	short x,y,w,h;
+				x = message[4];
+				y = message[5];
+				w = message[6];
+				h = message[7];
+				wind_calc(WC_WORK,GEM_win_type, x,y,w,h, &x,&y,&w,&h);
+				w=w-(w%16);  /* %16 for speed up reason on VDI */
+				x=x-(x%8);
+				wind_calc(WC_BORDER,GEM_win_type, x,y,w,h, &x,&y,&w,&h);
+				wind_set (message[3], WF_CURRXYWH, x, y, w, h);
 			wind_get (message[3], WF_WORKXYWH, &GEM_work_x, &GEM_work_y, &GEM_work_w, &GEM_work_h);
+	                }
 			break;
 		case WM_TOPPED:
 			wind_set(message[3],WF_TOP,message[4],0,0,0);
@@ -274,6 +283,7 @@ static int do_messages(_THIS, short *message, short latest_msg_id)
 				h = message[7];
 				wind_calc(WC_WORK,GEM_win_type, x,y,w,h, &x,&y,&w,&h);
 				w=w-(w%16);  /* %16 for speed up reason on VDI */
+				x=x-(x%8); 
 				wind_calc(WC_BORDER,GEM_win_type, x,y,w,h, &x,&y,&w,&h);
 				wind_set (message[3], WF_CURRXYWH, x, y, w, h);
 				wind_get (message[3], WF_WORKXYWH, &GEM_work_x, &GEM_work_y, &GEM_work_w, &GEM_work_h);
@@ -311,6 +321,7 @@ static int do_messages(_THIS, short *message, short latest_msg_id)
 				}
 					wind_calc(WC_WORK,GEM_win_type, x,y,w,h, &x,&y,&w,&h);
 					w=w-(w%16);  /* %16 for speed up reason on VDI */
+					x=x-(x%8);
 					wind_calc(WC_BORDER,GEM_win_type, x,y,w,h, &x,&y,&w,&h);
 				wind_set (message[3], WF_CURRXYWH, x, y, w, h);
 				}
