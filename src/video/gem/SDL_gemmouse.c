@@ -169,6 +169,7 @@ void GEM_CheckMouseMode(_THIS)
 {
 	const Uint8 full_focus = (SDL_APPACTIVE|SDL_APPINPUTFOCUS|SDL_APPMOUSEFOCUS);
 	int set_system_cursor = 1;
+	
 	SDL_bool hide_system_cursor = SDL_FALSE;
 
 #ifdef DEBUG_VIDEO_GEM
@@ -180,7 +181,6 @@ void GEM_CheckMouseMode(_THIS)
 		&& (this->input_grab != SDL_GRAB_OFF)
 		&& (SDL_GetAppState() & SDL_APPACTIVE);
 	SDL_AtariXbios_LockMousePosition(GEM_mouse_relative);
-
 	if (SDL_cursorstate & CURSOR_VISIBLE) {
 		/* Application defined cursor only over the application window */
 		if ((SDL_GetAppState() & full_focus) == full_focus) {

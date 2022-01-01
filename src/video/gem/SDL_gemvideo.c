@@ -89,9 +89,9 @@ static int GEM_FlipHWSurface(_THIS, SDL_Surface *surface);
 static void GEM_UnlockHWSurface(_THIS, SDL_Surface *surface);
 static void GEM_FreeHWSurface(_THIS, SDL_Surface *surface);
 static void GEM_UpdateRects(_THIS, int numrects, SDL_Rect *rects);
-#if 0
+
 static int GEM_ToggleFullScreen(_THIS, int on);
-#endif
+
 
 /* Internal functions */
 static void GEM_FreeBuffers(_THIS);
@@ -112,10 +112,10 @@ static void GEM_GL_SwapBuffers(_THIS);
 static int GEM_Available(void)
 {
 	/* Test if AES available */
-	if (appl_init() == -1)
+/*	if (appl_init() == -1)
 		return 0;
 
-	appl_exit();
+	appl_exit();    */
 	return 1;
 }
 
@@ -155,14 +155,14 @@ static SDL_VideoDevice *GEM_CreateDevice(int devindex)
 	device->ListModes = GEM_ListModes;
 	device->SetVideoMode = GEM_SetVideoMode;
 	device->SetColors = GEM_SetColors;
-	device->UpdateRects = NULL /*GEM_UpdateRects*/;
+	device->UpdateRects = GEM_UpdateRects;
 	device->VideoQuit = GEM_VideoQuit;
 	device->AllocHWSurface = GEM_AllocHWSurface;
 	device->LockHWSurface = GEM_LockHWSurface;
 	device->UnlockHWSurface = GEM_UnlockHWSurface;
 	device->FlipHWSurface = GEM_FlipHWSurface;
 	device->FreeHWSurface = GEM_FreeHWSurface;
-	device->ToggleFullScreen = NULL /*GEM_ToggleFullScreen*/;
+	device->ToggleFullScreen = GEM_ToggleFullScreen;
 
 	/* Window manager */
 	device->SetCaption = GEM_SetCaption;
@@ -202,6 +202,7 @@ static SDL_VideoDevice *GEM_CreateDevice(int devindex)
 	}*/
 
 	SDL_AtariXbios_InstallVectors(vectors_mask);
+
 
 	device->free = GEM_DeleteDevice;
 
@@ -309,8 +310,10 @@ int GEM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 		fprintf(stderr,"Can not open AES\n");
 		return 1;
 	}
-
+	if(wind_get(-2,13,0,0,0,0)) GEM_firstxywh=13; /* WF_FIRSTAREAXYWH */
+	else GEM_firstxywh=WF_FIRSTXYWH;
 	/* Read version and features */
+#if 0
 	GEM_version = aes_global[0];
 	if (GEM_version >= 0x0410) {
 		short ap_gout[4], errorcode;
@@ -322,7 +325,7 @@ int GEM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 			GEM_wfeatures=ap_gout[0];			
 		}
 	}	
-
+#endif
 	/* Ask VDI physical workstation handle opened by AES */
 	VDI_handle = graf_handle(&dummy, &dummy, &dummy, &dummy);
 	if (VDI_handle<1) {
@@ -406,6 +409,7 @@ int GEM_VideoInit(_THIS, SDL_PixelFormat *vformat)
 	GEM_icon_name = empty_name;
 
 	GEM_handle = -1;
+	GEM_state = 0;
 	GEM_locked = SDL_FALSE;
 	GEM_win_fulled = SDL_FALSE;
 	GEM_fullscreen = SDL_FALSE;
@@ -780,14 +784,17 @@ SDL_Surface *GEM_SetVideoMode(_THIS, SDL_Surface *current,
 
 			/* Open the window */
 			wind_open(GEM_handle,x2,y2,w2,h2);
+			wind_get (GEM_handle, WF_WORKXYWH, &GEM_work_x,&GEM_work_y,&GEM_work_w,&GEM_work_h);
 		} else {
 			/* Resize window to fit asked video mode */
 			wind_get (GEM_handle, WF_WORKXYWH, &x2,&y2,&w2,&h2);
 			if (wind_calc(WC_BORDER, GEM_win_type, x2,y2,width,height, &x2,&y2,&w2,&h2)) {
 				wind_set (GEM_handle, WF_CURRXYWH, x2,y2,w2,h2);
+				
 			}
+			wind_get (GEM_handle, WF_WORKXYWH, &GEM_work_x,&GEM_work_y,&GEM_work_w,&GEM_work_h);
 		}
-
+		GEM_grab_mouse=0;
 		GEM_fullscreen = SDL_FALSE;
 	}
 
@@ -930,19 +937,16 @@ static void GEM_UpdateRectsWindowed(_THIS, int numrects, SDL_Rect *rects)
 {
 	short pxy[4], wind_pxy[4];
 	int i;
-
-	if (wind_get(GEM_handle, WF_WORKXYWH, &wind_pxy[0], &wind_pxy[1], &wind_pxy[2], &wind_pxy[3])==0) {
-		return;
-	}
-
+	wind_update(BEG_UPDATE);
 	for ( i=0; i<numrects; ++i ) {
-		pxy[0] = wind_pxy[0] + rects[i].x;
-		pxy[1] = wind_pxy[1] + rects[i].y;
+		pxy[0] = GEM_work_x + rects[i].x;
+		pxy[1] = GEM_work_y + rects[i].y;
 		pxy[2] = rects[i].w;
 		pxy[3] = rects[i].h;
 
 		GEM_wind_redraw(this, GEM_handle, pxy);
 	}
+	wind_update(END_UPDATE);
 }
 
 static void GEM_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
@@ -1026,10 +1030,14 @@ static int GEM_FlipHWSurfaceWindowed(_THIS, SDL_Surface *surface)
 	short	pxy[8];
 
 	/* Update the whole window */
-	wind_get(GEM_handle, WF_WORKXYWH, &pxy[0], &pxy[1], &pxy[2], &pxy[3]);
 
+	pxy[0]=GEM_work_x;
+	pxy[1]=GEM_work_y;
+	pxy[2]=GEM_work_w;
+	pxy[3]=GEM_work_h;
+	wind_update(BEG_UPDATE);
 	GEM_wind_redraw(this, GEM_handle, pxy);
-
+	wind_update(END_UPDATE);
 	return(0);
 }
 
@@ -1080,7 +1088,7 @@ static int GEM_SetColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 	return(1);
 }
 
-#if 0
+
 static int GEM_ToggleFullScreen(_THIS, int on)
 {
 	if (on) {
@@ -1091,7 +1099,7 @@ static int GEM_ToggleFullScreen(_THIS, int on)
 
 	return(1);
 }
-#endif
+
 
 /* Note:  If we are terminated, this could be called in the middle of
    another SDL video routine -- notably UpdateRects.
@@ -1151,14 +1159,18 @@ void GEM_VideoQuit(_THIS)
 void GEM_wind_redraw(_THIS, int winhandle, short *inside)
 {
 	short todo[4];
-
+	short insidemouse[4] = {GEM_mouse_x,GEM_mouse_y,1,1};
 	/* Tell AES we are going to update */
-	wind_update(BEG_UPDATE);
+/*	wind_update(BEG_UPDATE);*/
 
-	v_hide_c(VDI_handle);
+/*	v_hide_c(VDI_handle);*/
 
+	todo[0]=inside[0];
+	todo[1]=inside[1];
+	todo[2]=inside[2];
+	todo[3]=inside[3];
 	/* Browse the rectangle list to redraw */
-	if (wind_get(winhandle, WF_FIRSTXYWH, &todo[0], &todo[1], &todo[2], &todo[3])!=0) {
+	if (wind_get(winhandle, /*WF_FIRSTXYWH*/GEM_firstxywh, &todo[0], &todo[1], &todo[2], &todo[3])!=0) {
 
 		while (todo[2] && todo[3]) {
 
@@ -1175,10 +1187,11 @@ void GEM_wind_redraw(_THIS, int winhandle, short *inside)
 
 	}
 
+/*	v_show_c(VDI_handle,1);*/
 	/* Update finished */
-	wind_update(END_UPDATE);
+/*	wind_update(END_UPDATE);*/
 
-	v_show_c(VDI_handle,1);
+	
 }
 
 static void refresh_window(_THIS, int winhandle, short *rect)
@@ -1189,6 +1202,8 @@ static void refresh_window(_THIS, int winhandle, short *rect)
 	int iconified;
 
 	/* Is window iconified ? */
+	iconified = GEM_state&1;
+#if 0
 	iconified = 0;
 /*	if (GEM_wfeatures & (1<<WF_ICONIFY))*/ {
 		if (wind_get(winhandle, WF_ICONIFY, &wind_pxy[0], &wind_pxy[1], &wind_pxy[2], &wind_pxy[3])!=0) {
@@ -1196,10 +1211,13 @@ static void refresh_window(_THIS, int winhandle, short *rect)
 		}
 	}
 
+#endif
+
+#if 0
 	if (wind_get(winhandle, WF_WORKXYWH, &wind_pxy[0], &wind_pxy[1], &wind_pxy[2], &wind_pxy[3])==0) {
 		return;
 	}
-
+#endif
 	if (iconified && GEM_icon) {
 		short icon_rect[4], dst_rect[4];
 		short iconx,icony;
@@ -1209,8 +1227,10 @@ static void refresh_window(_THIS, int winhandle, short *rect)
 		GEM_ClearRect(this, rect);
 
 		/* Calculate centered icon(x,y,w,h) relative to window */
-		iconx = (wind_pxy[2]-surface->w)>>1;
-		icony = (wind_pxy[3]-surface->h)>>1;
+
+		
+		iconx = (GEM_work_w-surface->w)>>1;
+		icony = (GEM_work_h-surface->h)>>1;
 
 		icon_rect[0] = iconx;
 		icon_rect[1] = icony;
@@ -1218,8 +1238,9 @@ static void refresh_window(_THIS, int winhandle, short *rect)
 		icon_rect[3] = surface->h;
 
 		/* Calculate redraw rectangle(x,y,w,h) relative to window */
-		dst_rect[0] = rect[0]-wind_pxy[0];
-		dst_rect[1] = rect[1]-wind_pxy[1];
+
+		dst_rect[0] = rect[0]-GEM_work_x;
+		dst_rect[1] = rect[1]-GEM_work_y;
 		dst_rect[2] = rect[2]-rect[0]+1;
 		dst_rect[3] = rect[3]-rect[1]+1;
 
@@ -1237,8 +1258,12 @@ static void refresh_window(_THIS, int winhandle, short *rect)
 #endif
 
 		/* Calculate icon(x1,y1,x2,y2) relative to screen */
+#if 0
 		icon_rect[0] += wind_pxy[0];
 		icon_rect[1] += wind_pxy[1];
+#endif
+		icon_rect[0] += GEM_work_x;
+		icon_rect[1] += GEM_work_y;
 		icon_rect[2] += icon_rect[0]-1;
 		icon_rect[3] += icon_rect[1]-1;
 
@@ -1249,11 +1274,11 @@ static void refresh_window(_THIS, int winhandle, short *rect)
 	 	pxy[7]=pxy[3]=MIN(icon_rect[3],rect[3]);
 
 		/* Calculate icon source image pos relative to window */
-		pxy[0] -= wind_pxy[0]+iconx;
-		pxy[1] -= wind_pxy[1]+icony;
-		pxy[2] -= wind_pxy[0]+iconx;
-		pxy[3] -= wind_pxy[1]+icony;
 
+		pxy[0] -= GEM_work_x+iconx;
+		pxy[1] -= GEM_work_y+icony;
+		pxy[2] -= GEM_work_x+iconx;
+		pxy[3] -= GEM_work_y+icony;
 	} else {
 		surface = this->screen;
 
@@ -1262,10 +1287,11 @@ static void refresh_window(_THIS, int winhandle, short *rect)
 #endif
 
 		/* Redraw all window content */
-		pxy[0] = rect[0]-wind_pxy[0];
-		pxy[1] = rect[1]-wind_pxy[1];
-	 	pxy[2] = rect[2]-wind_pxy[0];   
-	 	pxy[3] = rect[3]-wind_pxy[1];  
+
+		pxy[0] = rect[0]-GEM_work_x;
+		pxy[1] = rect[1]-GEM_work_y;
+	 	pxy[2] = rect[2]-GEM_work_x;
+	 	pxy[3] = rect[3]-GEM_work_y;
 
 		pxy[4] = rect[0];
 		pxy[5] = rect[1];
@@ -1277,18 +1303,22 @@ static void refresh_window(_THIS, int winhandle, short *rect)
 		void *src, *dest;
 		int x1,x2;
 
-		x1 = (rect[0]-wind_pxy[0]) & ~15;
-		x2 = rect[2]-wind_pxy[0];
+		x1 = (rect[0]-GEM_work_x) & ~15;
+		x2 = rect[2]-GEM_work_y;
 		if (x2 & 15) {
 			x2 = (x2 | 15) +1;
 		}
 
 		src = surface->pixels;
+#if 0
 		src += surface->pitch * (rect[1]-wind_pxy[1]);
+#endif
+		src += surface->pitch * (rect[1]-GEM_work_y);
 		src += x1;
 
 		dest = GEM_buffer2;
-		dest += surface->pitch * (rect[1]-wind_pxy[1]);
+
+		dest += surface->pitch * (rect[1]-GEM_work_y);
 		dest += x1;
 
 		SDL_Atari_C2pConvert(

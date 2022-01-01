@@ -93,6 +93,15 @@ struct SDL_PrivateVideoData {
 	SDL_bool fullscreen;		/* Fullscreen or windowed mode ? */
 	SDL_Rect *SDL_modelist[SDL_NUMMODES+1];	/* Mode list */
 	SDL_Surface *icon;			/* The icon */
+	short win_flags;                 /* bit 0 at 1 -> iconified state */
+	short work_x;			/* working area x,y,w,h */
+	short work_y;
+	short work_w;
+	short work_h;
+	short mouse_x;			/* mouse position */
+	short mouse_y;
+	short grab_mouse;		/* if mouse is inside window set to 1 */
+	short firstxywh;		/* choose between WF_FIRSTXYWH and WF_FIRSTAREAXYWH */
 };
 
 /* Hidden structure -> variables names */
@@ -139,6 +148,15 @@ struct SDL_PrivateVideoData {
 #define GEM_menubar			(this->hidden->menubar)
 #define GEM_usedevmouse		(this->hidden->use_dev_mouse)
 #define GEM_cursor			(this->hidden->cursor)
+#define GEM_state               (this->hidden->win_flags)
+#define GEM_work_x		(this->hidden->work_x)
+#define GEM_work_y		(this->hidden->work_y)
+#define GEM_work_w		(this->hidden->work_w)
+#define GEM_work_h		(this->hidden->work_h)
+#define GEM_mouse_x		(this->hidden->mouse_x)
+#define GEM_mouse_y		(this->hidden->mouse_y)
+#define GEM_grab_mouse		(this->hidden->grab_mouse)
+#define GEM_firstxywh		(this->hidden->firstxywh)
 
 #define GEM_buffer1			(this->hidden->buffer1)
 #define GEM_buffer2			(this->hidden->buffer2)

@@ -31,6 +31,7 @@
  */
 
 #include <gem.h>
+#include <mintbind.h>
 
 #include "SDL_timer.h"
 #include "../../events/SDL_sysevents.h"
@@ -45,7 +46,7 @@
 
 /* Duration after which we consider key released */
 
-#define KEY_PRESS_DURATION 100
+long KEY_PRESS_DURATION=100L;
 
 #define MSG_SDL_ID	(('S'<<8)|'D')
 
@@ -65,7 +66,6 @@ static void do_keyboard(short kc, Uint32 tick);
 static void do_keyboard_special(short ks, Uint32 tick);
 static void do_mouse_motion(_THIS, short mx, short my);
 static void do_mouse_buttons(_THIS, short mb);
-static int mouse_in_work_area(int winhandle, short mx, short my);
 static void clearKeyboardState(Uint32 tick);
 
 /* Functions */
@@ -82,41 +82,65 @@ void GEM_InitOSKeymap(_THIS)
 	SDL_Atari_InitInternalKeymap(this);
 }
 
+static int game_kbd;
+
+
 void GEM_PumpEvents(_THIS)
 {
-	short prevkc=0, mousex, mousey, mouseb, kstate;
+	short prevkc=0/*, mousex, mousey*/, mouseb, kstate;
 	int i, quit = 0;
+	static int first=1;
+	static long temps=1000L;
 	SDL_keysym keysym;
 	Uint32 cur_tick;
 	static Uint32 prev_now = 0, prev_msg = 0;
 	static short latest_msg_id = 0;
 
 	cur_tick = SDL_GetTicks();
-	if (prev_now == cur_tick) {
+	if (cur_tick - prev_now < 20L ) {
 		return;
 	}
 	prev_now = cur_tick;
 
 	SDL_AtariMint_BackgroundTasks();
-	clearKeyboardState(cur_tick);
+/*	clearKeyboardState(cur_tick);
+*/
 
-	if (prev_msg) {
+
+
+	/* Update mouse state */
+	graf_mkstate(&GEM_mouse_x, &GEM_mouse_y, &mouseb, &kstate);
+	do_keyboard_special(kstate, cur_tick);
+	do_mouse_motion(this, GEM_mouse_x, GEM_mouse_y);
+	do_mouse_buttons(this, mouseb);
+
 		/* Wait at least 20ms before each event processing loop */
-		if (cur_tick-prev_msg < 20) {
+        if ((cur_tick-prev_msg < KEY_PRESS_DURATION/*20*/)) {
 			return;
 		}
-	}
+
+        GEM_CheckMouseMode(this);
+
 	prev_msg = cur_tick;
+         if(first)
+         {        first=0;
+                  game_kbd=appl_control(GEM_ap_id,17,"app_game_kbd");      /* fast keyboard for MyAES */
+                  if(game_kbd)
+                  {
+                  	temps=0L;
+                  	KEY_PRESS_DURATION=60L;
+	}
+         }
 
 	dummy_msgbuf[1] = ++latest_msg_id;
-	if (appl_write(GEM_ap_id, sizeof(dummy_msgbuf), dummy_msgbuf) == 0) {
+	 	if (!game_kbd && (appl_write(GEM_ap_id, sizeof(dummy_msgbuf), dummy_msgbuf) == 0)) {
 		/* If it fails, wait for previous id */
 		--latest_msg_id;
 	}
-
 	while (!quit) {
 		int resultat;
 		short buffer[8], kc, dummy;
+
 
 		resultat = evnt_multi(
 			MU_MESAG|MU_TIMER|MU_KEYBD,
@@ -124,8 +148,8 @@ void GEM_PumpEvents(_THIS)
 			0,0,0,0,0,
 			0,0,0,0,0,
 			buffer,
-			1000,
-			&dummy,&dummy,&dummy,&kstate,&kc,&dummy
+			temps,
+			&GEM_mouse_x,&GEM_mouse_y,&mouseb,&kstate,&kc,&dummy
 		);
 
 		/* Message event ? */
@@ -134,27 +158,17 @@ void GEM_PumpEvents(_THIS)
 
 		/* Keyboard event ? */
 		if (resultat & MU_KEYBD) {
-			do_keyboard_special(kstate, cur_tick);
-			if (prevkc != kc) {
+		/*	do_keyboard_special(kstate, cur_tick);  */
 				do_keyboard(kc, cur_tick);
-				prevkc = kc;
-			}
 		}
 
 		/* Timer event ? Just used as a safeguard */
 		if (resultat & MU_TIMER) {
 			quit = 1;
 		}
+
 	}
-
-	GEM_CheckMouseMode(this);
-
-	/* Update mouse state */
-	graf_mkstate(&mousex, &mousey, &mouseb, &kstate);
-	do_keyboard_special(kstate, cur_tick);
-	do_mouse_motion(this, mousex, mousey);
-	do_mouse_buttons(this, mouseb);
-
+		clearKeyboardState(cur_tick);
 	/* Now generate keyboard events */
 	for (i=0; i<ATARIBIOS_MAXKEYS; i++) {
 		/* Key pressed ? */
@@ -169,6 +183,10 @@ void GEM_PumpEvents(_THIS)
 	}
 
 	SDL_memcpy(gem_previouskeyboard,gem_currentkeyboard,sizeof(gem_previouskeyboard));
+
+	
+
+	
 
 	/* Refresh window name ? */
 	if (GEM_refresh_name) {
@@ -202,6 +220,7 @@ static int do_messages(_THIS, short *message, short latest_msg_id)
 			break;
 		case WM_MOVED:
 			wind_set(message[3],WF_CURRXYWH,message[4],message[5],message[6],message[7]);
+			wind_get (message[3], WF_WORKXYWH, &GEM_work_x, &GEM_work_y, &GEM_work_w, &GEM_work_h);
 			break;
 		case WM_TOPPED:
 			wind_set(message[3],WF_TOP,message[4],0,0,0);
@@ -220,6 +239,7 @@ static int do_messages(_THIS, short *message, short latest_msg_id)
 		case WM_ICONIFY:
 		case WM_ALLICONIFY:
 			wind_set(message[3],WF_ICONIFY,message[4],message[5],message[6],message[7]);
+			GEM_state |=1;
 			/* If we're active, make ourselves inactive */
 			if ( SDL_GetAppState() & SDL_APPACTIVE ) {
 				/* Send an internal deactivate event */
@@ -230,9 +250,11 @@ static int do_messages(_THIS, short *message, short latest_msg_id)
 				wind_set(GEM_handle,WF_NAME,(short)(((unsigned long)GEM_icon_name)>>16),(short)(((unsigned long)GEM_icon_name) & 0xffff),0,0);
 				GEM_refresh_name = SDL_FALSE;
 			}
+			wind_get (message[3], WF_WORKXYWH, &GEM_work_x, &GEM_work_y, &GEM_work_w, &GEM_work_h);
 			break;
 		case WM_UNICONIFY:
 			wind_set(message[3],WF_UNICONIFY,message[4],message[5],message[6],message[7]);
+			GEM_state&=~1;
 			/* If we're not active, make ourselves active */
 			if ( !(SDL_GetAppState() & SDL_APPACTIVE) ) {
 				/* Send an internal activate event */
@@ -242,18 +264,41 @@ static int do_messages(_THIS, short *message, short latest_msg_id)
 				wind_set(GEM_handle,WF_NAME,(short)(((unsigned long)GEM_title_name)>>16),(short)(((unsigned long)GEM_title_name) & 0xffff),0,0);
 				GEM_refresh_name = SDL_FALSE;
 			}
+			wind_get (message[3], WF_WORKXYWH, &GEM_work_x, &GEM_work_y, &GEM_work_w, &GEM_work_h);
 			break;
 		case WM_SIZED:
-			wind_set (message[3], WF_CURRXYWH, message[4], message[5], message[6], message[7]);
-			wind_get (message[3], WF_WORKXYWH, &x2, &y2, &w2, &h2);
+			{	short x,y,w,h;
+				x = message[4];
+				y = message[5];
+				w = message[6];
+				h = message[7];
+				wind_calc(WC_WORK,GEM_win_type, x,y,w,h, &x,&y,&w,&h);
+				w=w-(w%16);  /* %16 for speed up reason on VDI */
+				wind_calc(WC_BORDER,GEM_win_type, x,y,w,h, &x,&y,&w,&h);
+				wind_set (message[3], WF_CURRXYWH, x, y, w, h);
+				wind_get (message[3], WF_WORKXYWH, &GEM_work_x, &GEM_work_y, &GEM_work_w, &GEM_work_h);
 			GEM_win_fulled = SDL_FALSE;		/* Cancel maximized flag */
 			GEM_lock_redraw = SDL_TRUE;		/* Prevent redraw till buffers resized */
-			SDL_PrivateResize(w2, h2);
+				SDL_PrivateResize(GEM_work_w, GEM_work_h);
+			}
 			break;
 		case WM_FULLED:
 			{
 				short x,y,w,h;
+				static int testfullscreen=-1;
 
+				if(testfullscreen==-1)
+				{
+					testfullscreen = wind_set(-2,235 /* WF_FULLSCREEN */,0,0,0,0);
+				}
+				if(testfullscreen)
+				{
+					wind_set(message[3],235 /* WF_FULLSCREEN */,0,0,0,0);
+					if (GEM_win_fulled) GEM_win_fulled = SDL_FALSE;
+					else GEM_win_fulled = SDL_TRUE;
+				}
+				else
+				{
 				if (GEM_win_fulled) {
 					wind_get (message[3], WF_PREVXYWH, &x, &y, &w, &h);
 					GEM_win_fulled = SDL_FALSE;
@@ -264,10 +309,14 @@ static int do_messages(_THIS, short *message, short latest_msg_id)
 					h = GEM_desk_h;
 					GEM_win_fulled = SDL_TRUE;
 				}
+					wind_calc(WC_WORK,GEM_win_type, x,y,w,h, &x,&y,&w,&h);
+					w=w-(w%16);  /* %16 for speed up reason on VDI */
+					wind_calc(WC_BORDER,GEM_win_type, x,y,w,h, &x,&y,&w,&h);
 				wind_set (message[3], WF_CURRXYWH, x, y, w, h);
-				wind_get (message[3], WF_WORKXYWH, &x2, &y2, &w2, &h2);
+				}
+				wind_get (message[3], WF_WORKXYWH, &GEM_work_x, &GEM_work_y, &GEM_work_w, &GEM_work_h);
 				GEM_lock_redraw = SDL_TRUE;		/* Prevent redraw till buffers resized */
-				SDL_PrivateResize(w2, h2);
+				SDL_PrivateResize(GEM_work_w, GEM_work_h);
 			}
 			break;
 		case WM_BOTTOMED:
@@ -291,7 +340,7 @@ static void do_keyboard(short kc, Uint32 tick)
 	if (kc) {
 		scancode=(kc>>8) & (ATARIBIOS_MAXKEYS-1);
 		gem_currentkeyboard[scancode]=0xFF;
-		keyboard_ticks[scancode]=tick;
+		keyboard_ticks[scancode]=tick+KEY_PRESS_DURATION;
 	}
 }
 
@@ -308,24 +357,34 @@ static void do_keyboard_special(short ks, Uint32 tick)
 		scancode=SCANCODE_LEFTCONTROL;
 	if (ks & K_ALT)
 		scancode=SCANCODE_LEFTALT;
-
+        gem_currentkeyboard[SCANCODE_RIGHTSHIFT]=0;
+        keyboard_ticks[SCANCODE_RIGHTSHIFT]=0;
+        gem_currentkeyboard[SCANCODE_LEFTSHIFT]=0;
+        keyboard_ticks[SCANCODE_LEFTSHIFT]=0;
+        gem_currentkeyboard[SCANCODE_LEFTCONTROL]=0;
+        keyboard_ticks[SCANCODE_LEFTCONTROL]=0;
+        gem_currentkeyboard[SCANCODE_LEFTALT]=0;
+        keyboard_ticks[SCANCODE_LEFTALT]=0;
 	if (scancode) {
 		gem_currentkeyboard[scancode]=0xFF;
-		keyboard_ticks[scancode]=tick;
+		keyboard_ticks[scancode]=tick+KEY_PRESS_DURATION;
 	}
 }
 
 static void do_mouse_motion(_THIS, short mx, short my)
 {
 	short x2, y2, w2, h2;
-
 	if (this->input_grab == SDL_GRAB_OFF) {
 		/* Switch mouse focus state */
-		if (!GEM_fullscreen && (GEM_handle>=0)) {
-			SDL_PrivateAppActive(
-				mouse_in_work_area(GEM_handle, mx,my),
+		if (!GEM_fullscreen && (GEM_handle>=0)) { short insidemouse[4]={mx,my,1,1}, workarea[4]={GEM_work_x, GEM_work_y, GEM_work_w, GEM_work_h}; 
+		
+			if((rc_intersect((GRECT *)workarea,(GRECT *)insidemouse)) && wind_find(mx,my)==GEM_handle) GEM_grab_mouse=1; /* verify if mouse in windows to grab it if need */
+			else GEM_grab_mouse=0; 
+			SDL_PrivateAppActive( GEM_grab_mouse,
+			/*	mouse_in_work_area(GEM_handle, mx,my),*/
 				SDL_APPMOUSEFOCUS);
 		}
+
 	}
 	GEM_CheckMouseMode(this);
 
@@ -349,7 +408,11 @@ static void do_mouse_motion(_THIS, short mx, short my)
 	w2 = VDI_w;
 	h2 = VDI_h;
 	if ((!GEM_fullscreen) && (GEM_handle>=0)) {
-		wind_get (GEM_handle, WF_WORKXYWH, &x2, &y2, &w2, &h2);
+
+		x2 = GEM_work_x;
+		y2 = GEM_work_y;
+		w2 = GEM_work_w;
+		h2 = GEM_work_h;
 	}
 
 	if ((prevmx!=mx) || (prevmy!=my)) {
@@ -398,28 +461,6 @@ static void do_mouse_buttons(_THIS, short mb)
 	prevmb = mb;
 }
 
-/* Check if mouse in visible area of the window */
-static int mouse_in_work_area(int winhandle, short mx, short my)
-{
-	short todo[4];
-	short inside[4] = {mx,my,1,1};
-
-	/* Browse the rectangle list */
-	if (wind_get(winhandle, WF_FIRSTXYWH, &todo[0], &todo[1], &todo[2], &todo[3])!=0) {
-		while (todo[2] && todo[3]) {
-			if (rc_intersect((GRECT *)inside,(GRECT *)todo)) {
-				return 1;
-			}
-
-			if (wind_get(winhandle, WF_NEXTXYWH, &todo[0], &todo[1], &todo[2], &todo[3])==0) {
-				break;
-			}
-		}
-
-	}
-
-	return 0;
-}
 
 /* Clear key state for which we did not receive events for a while */
 
@@ -429,7 +470,7 @@ static void clearKeyboardState(Uint32 tick)
 
 	for (i=0; i<ATARIBIOS_MAXKEYS; i++) {
 		if (keyboard_ticks[i]) {
-			if (tick-keyboard_ticks[i] > KEY_PRESS_DURATION) {
+			if (tick>keyboard_ticks[i] ) {
 				gem_currentkeyboard[i]=0;
 				keyboard_ticks[i]=0;
 			}
