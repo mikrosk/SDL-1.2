@@ -1160,14 +1160,19 @@ void GEM_VideoQuit(_THIS)
 	this->screen->pixels = NULL;	
 }
 
+short __SDL_GEM_HIDE_C_OPTION=0;  /* patch this value to 1 in your application if you not redraw continuously redraw not clean*/
+
 void GEM_wind_redraw(_THIS, int winhandle, short *inside)
 {
 	short todo[4];
 /*	short insidemouse[4] = {GEM_mouse_x,GEM_mouse_y,1,1};  */
 	/* Tell AES we are going to update */
-/*	wind_update(BEG_UPDATE);*/
 
-/*	v_hide_c(VDI_handle);*/
+	if(__SDL_GEM_HIDE_C_OPTION) 
+	{
+		wind_update(BEG_UPDATE);
+		v_hide_c(VDI_handle);
+	}
 
 	todo[0]=inside[0];
 	todo[1]=inside[1];
@@ -1191,9 +1196,12 @@ void GEM_wind_redraw(_THIS, int winhandle, short *inside)
 
 	}
 
-/*	v_show_c(VDI_handle,1);*/
+	if(__SDL_GEM_HIDE_C_OPTION) 
+	{
+		v_show_c(VDI_handle,1);
+		wind_update(END_UPDATE);
+	}
 	/* Update finished */
-/*	wind_update(END_UPDATE);*/
 
 	
 }
