@@ -408,7 +408,7 @@ _SDL_Atari_C2pConvert4_pal:
 
 	moveml	d2-d3,sp@-
 
-	lea	c2p_table,a2
+	lea	c2p_table,a1
 	movew	#255,d3
 c2p_pal_initbcl:
 	movew	a0@+,d0

@@ -44,10 +44,22 @@
 /*--- Vector installer ---*/
 
 _SDL_AtariXbios_Install:
+#if defined(__mcoldfire__)
+	lea	sp@(-8),sp
+	moveml	d2/a2,sp@
+#else
+	moveml	d2/a2,sp@-
+#endif
 	/* KBDVBASE *Kbdvbase(void); */
 	movew	#34,sp@-
 	trap	#14
 	addql	#2,sp
+#if defined(__mcoldfire__)
+	moveml	sp@,d2/a2
+	lea	sp@(8),sp
+#else
+	moveml	sp@+,d2/a2
+#endif
 	movel	d0,a0
 
 	/* Stop interrupts */
@@ -94,10 +106,22 @@ no_new_joystick_vector:
 /*--- Vector restorer ---*/
 
 _SDL_AtariXbios_Restore:
+#if defined(__mcoldfire__)
+	lea	sp@(-8),sp
+	moveml	d2/a2,sp@
+#else
+	moveml	d2/a2,sp@-
+#endif
 	/* KBDVBASE *Kbdvbase(void); */
 	movew	#34,sp@-
 	trap	#14
 	addql	#2,sp
+#if defined(__mcoldfire__)
+	moveml	sp@,d2/a2
+	lea	sp@(8),sp
+#else
+	moveml	sp@+,d2/a2
+#endif
 	movel	d0,a0
 
 	/* Stop interrupts */
