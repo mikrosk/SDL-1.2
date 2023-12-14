@@ -1657,7 +1657,6 @@ CheckAtariGemVideo()
             video_gem=yes
             AC_DEFINE(SDL_VIDEO_DRIVER_GEM)
             SOURCES="$SOURCES $srcdir/src/video/gem/*.c"
-            SDL_LIBS="$SDL_LIBS -lgem"
             have_video=yes
         fi
     fi
@@ -2206,7 +2205,7 @@ CheckAtariLdg()
         if test x$have_ldg_hdr = xyes -a x$have_ldg_lib = xyes; then
             AC_DEFINE(SDL_LOADSO_LDG)
             SOURCES="$SOURCES $srcdir/src/loadso/mint/*.c"
-            SDL_LIBS="$SDL_LIBS -lldg -lgem"
+            SDL_LIBS="$SDL_LIBS -lldg"
             have_loadso=yes
         fi
     fi

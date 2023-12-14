@@ -93,15 +93,15 @@ int GEM_IconifyWindow(_THIS)
 		return 0;
 
 	GEM_message[0] = WM_ICONIFY;
-	GEM_message[1] = gl_apid;
+	GEM_message[1] = GEM_ap_id;
 	GEM_message[2] = 0;
 	GEM_message[3] = GEM_handle;
 	GEM_message[4] = 0;
-	GEM_message[5] = GEM_desk_h-ICONHEIGHT;
+	GEM_message[5] = GEM_desk.g_h-ICONHEIGHT;
 	GEM_message[6] = ICONWIDTH;
 	GEM_message[7] = ICONHEIGHT;
 
-	appl_write(gl_apid, sizeof(GEM_message), GEM_message);
+	appl_write(GEM_ap_id, sizeof(GEM_message), GEM_message);
 
 	return 1;
 }
