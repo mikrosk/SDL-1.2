@@ -23243,61 +23243,10 @@ else $as_nop
 fi
 
     if test x$video_gem = xyes -a x$enable_atari_ldg = xyes; then
-        ac_fn_c_check_header_compile "$LINENO" "ldg.h" "ac_cv_header_ldg_h" "$ac_includes_default"
-if test "x$ac_cv_header_ldg_h" = xyes
-then :
-  have_ldg_hdr=yes
-fi
+        printf "%s\n" "#define SDL_LOADSO_LDG 1" >>confdefs.h
 
-        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for ldg_open in -lldg" >&5
-printf %s "checking for ldg_open in -lldg... " >&6; }
-if test ${ac_cv_lib_ldg_ldg_open+y}
-then :
-  printf %s "(cached) " >&6
-else $as_nop
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lldg -lgem $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-char ldg_open ();
-int
-main (void)
-{
-return ldg_open ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"
-then :
-  ac_cv_lib_ldg_ldg_open=yes
-else $as_nop
-  ac_cv_lib_ldg_ldg_open=no
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.beam \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_ldg_ldg_open" >&5
-printf "%s\n" "$ac_cv_lib_ldg_ldg_open" >&6; }
-if test "x$ac_cv_lib_ldg_ldg_open" = xyes
-then :
-  have_ldg_lib=yes
-else $as_nop
-  have_ldg_lib=no
-fi
-
-        if test x$have_ldg_hdr = xyes -a x$have_ldg_lib = xyes; then
-            printf "%s\n" "#define SDL_LOADSO_LDG 1" >>confdefs.h
-
-            SOURCES="$SOURCES $srcdir/src/loadso/mint/*.c"
-            SDL_LIBS="$SDL_LIBS -lldg"
-            have_loadso=yes
-        fi
+        SOURCES="$SOURCES $srcdir/src/loadso/mint/SDL_sysloadso.c $srcdir/src/loadso/mint/ldg/*.c"
+        have_loadso=yes
     fi
 }
 
@@ -24269,6 +24218,8 @@ case "$host" in
             fi
             have_timers=yes
         fi
+        # filter out -liconv from EXTRA_LDFLAGS, since we don't really use it
+        EXTRA_LDFLAGS="`echo $EXTRA_LDFLAGS | sed -e 's/-liconv //'`"
         ;;
     *-riscos)
         ARCH=riscos
