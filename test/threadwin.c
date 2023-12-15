@@ -234,6 +234,17 @@ int main(int argc, char *argv[])
 	SDL_Thread *mouse_thread;
 	SDL_Thread *keybd_thread;
 
+#if defined(SDL_SLB) && (defined(__atarist__) || defined(__TOS__))
+	{
+		long slbret;
+		if ((slbret = slb_sdl_open(NULL)) < 0)
+		{
+			fprintf(stderr, "cannot load " SDL_SHAREDLIB_NAME ": %ld\n", slbret);
+			return 1;
+		}
+	}
+#endif
+
 	/* Set the options, based on command line arguments */
 	init_flags = SDL_INIT_VIDEO;
 	video_bpp = 8;

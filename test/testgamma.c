@@ -82,6 +82,17 @@ int main(int argc, char *argv[])
 	Uint16 red_ramp[256];
 	Uint32 then, timeout;
 
+#if defined(SDL_SLB) && (defined(__atarist__) || defined(__TOS__))
+	{
+		long slbret;
+		if ((slbret = slb_sdl_open(NULL)) < 0)
+		{
+			fprintf(stderr, "cannot load " SDL_SHAREDLIB_NAME ": %ld\n", slbret);
+			return 1;
+		}
+	}
+#endif
+
 	/* Check command line arguments */
 	argv += get_video_args(argv, &w, &h, &bpp, &flags);
 

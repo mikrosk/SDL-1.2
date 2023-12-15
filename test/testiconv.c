@@ -38,6 +38,17 @@ int main(int argc, char *argv[])
 	FILE *file;
 	int errors = 0;
 
+#if defined(SDL_SLB) && (defined(__atarist__) || defined(__TOS__))
+	{
+		long slbret;
+		if ((slbret = slb_sdl_open(NULL)) < 0)
+		{
+			fprintf(stderr, "cannot load " SDL_SHAREDLIB_NAME ": %ld\n", slbret);
+			return 1;
+		}
+	}
+#endif
+
 	fname = (argc < 2) ? "utf8.txt" : argv[1];
 	file = fopen(fname, "rb");
 	if ( !file ) {

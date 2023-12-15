@@ -86,3 +86,11 @@ test/threadwin
 test/torturethread
 test/testcursor
 test/testloadso
+
+src/loadso/mint/imp_*.c
+src/loadso/mint/.genimpsources
+src/loadso/mint/vernum.h
+src/loadso/mint/nexports.h
+*.lo
+*.slb
+include/SDL_config.h

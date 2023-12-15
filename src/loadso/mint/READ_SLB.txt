@@ -1,0 +1,99 @@
+SDL shared library for Atari (MiNT/MagiC)
+=========================================
+
+This is an attempt to make SDL, which is used widely by several applications,
+available as a shared libary for Atari.
+
+The goal here was to make it as easy as possible to switch from linking a
+static version, to use the shared version instead. Remember though that
+neither the OS nor the compilers in use have direct support for that,
+and that the application needs to support it.
+
+
+How to use it:
+==============
+
+for GCC:
+Install the header files from the include directory to /usr/include (or
+to your cross installation directory), the libraries to /usr/lib, and
+the executables from /mint/slb to a directory where Slbopen can find them
+(usually also /mint/slb, or c:/gemsys/slb)
+
+In your application:
+- Define -DSDL_SLB before including <SDL.h>, or include <slb/SDL.h> instead
+  (both should have the same effect)
+- add a call to slb_sdl_open() before using any function from SDL. Optionally,
+  you can pass in a library search path that is passed along to Slbopen().
+  (see also the modified examples in the test/ directory)
+- for completeness, you can also add a call to slb_sdl_close() before your
+  application terminates.
+- link to libSDL.slb.a instead of the normal libSDL.a
+- use any function from SDL as usual. No need to pass any extra parameters.
+
+For Pure-C:
+Pure-C is currently not supported.
+
+No matter whether using the static or the shared library, you may have
+to increase the stack size of your application. For gcc, this may be
+achieved either by passing -Wl,-stack,256k in the link command, or by
+defining a global (long) _stacksize variable in your program. A stacksize
+of at least 256k is recommended (at least that was enough to run the
+test programs), maybe you need even more.
+
+That's all!
+
+Note that slb_sdl_open() contains fallback code for systems lacking Slbopen(),
+so this should work even on SingleTOS.
+
+
+
+Files in the archive:
+=====================
+
+usr/include/SDL/*.h
+    Unmodified versions from the files of the SDL distribution,
+    intended to be usable for both static and shared linking.
+usr/include/slb/SDL.h
+    Include file for using the shared library, with declarations of the above
+    mentioned functions.
+usr/lib/libSDL.a
+    Static version of the library
+usr/lib/libSDL.slb.a
+    Import library for using the shared library instead
+usr/lib/m68020-60/libSDL.a
+    Static version of the library, compiled for 68020 or better
+usr/lib/m68020-60/libSDL.slb.a
+    Import library for using the shared library instead,
+    compiled for 68020 or better
+usr/lib/m5475/libSDL.a
+    Static version of the library, compiled for coldfire
+usr/lib/m5475/libSDL.slb.a
+    Import library for using the shared library instead,
+    compiled for coldfire
+
+mint/slb
+    The shared library itself. Use the one appropiate for your system.
+
+
+Exported functions:
+===================
+
+#0: long sdl_slb_control(long fn, void *arg)
+    - used internally by slb_sdl_open() to check that
+      the correct version of the library was loaded
+
+everything else:
+    - all functions publicitly available from <SDL/*.h>.
+      Consult that header files, or the man page on
+      how to use them.
+
+
+Known bugs:
+===========
+
+- Although the handle of the shared library and its corresponding exec
+  function are available to the application, the exec function
+  should not be directly called. Always use the import functions
+  (they cover all available functions, anyway).
+
+- Pure-C is not yet supported.

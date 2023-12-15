@@ -341,6 +341,17 @@ int main(int argc, char **argv)
 	video_flags = 0;
 	overlay_format = SDL_YV12_OVERLAY;
 
+#if defined(SDL_SLB) && (defined(__atarist__) || defined(__TOS__))
+	{
+		long slbret;
+		if ((slbret = slb_sdl_open(NULL)) < 0)
+		{
+			fprintf(stderr, "cannot load " SDL_SHAREDLIB_NAME ": %ld\n", slbret);
+			return 1;
+		}
+	}
+#endif
+
 	while ( argc > 1 ) {
 		if ( strcmp(argv[1], "-delay") == 0 ) {
 			if ( argv[2] ) {

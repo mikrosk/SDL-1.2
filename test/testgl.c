@@ -793,6 +793,17 @@ int main(int argc, char *argv[])
 	int accel = 0;
 	int sync = 0;
 
+#if defined(SDL_SLB) && (defined(__atarist__) || defined(__TOS__))
+	{
+		long slbret;
+		if ((slbret = slb_sdl_open(NULL)) < 0)
+		{
+			fprintf(stderr, "cannot load " SDL_SHAREDLIB_NAME ": %ld\n", slbret);
+			return 1;
+		}
+	}
+#endif
+
 	logo = 0;
 	slowly = 0;
 	numtests = 1;

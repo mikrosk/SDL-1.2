@@ -107,6 +107,17 @@ int main(int argc,char *argv[])
 		gl_library = argv[1];
 	}
 	
+#if defined(SDL_SLB) && (defined(__atarist__) || defined(__TOS__))
+	{
+		long slbret;
+		if ((slbret = slb_sdl_open(NULL)) < 0)
+		{
+			fprintf(stderr, "cannot load " SDL_SHAREDLIB_NAME ": %ld\n", slbret);
+			return 1;
+		}
+	}
+#endif
+
 	if (SDL_Init(SDL_INIT_VIDEO)<0)
 	{
 		printf("Unable to init SDL : %s\n",SDL_GetError());

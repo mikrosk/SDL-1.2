@@ -49,6 +49,17 @@ int main(int argc, char *argv[])
 	
 	cleanup();
 
+#if defined(SDL_SLB) && (defined(__atarist__) || defined(__TOS__))
+	{
+		long slbret;
+		if ((slbret = slb_sdl_open(NULL)) < 0)
+		{
+			fprintf(stderr, "cannot load " SDL_SHAREDLIB_NAME ": %ld\n", slbret);
+			return 1;
+		}
+	}
+#endif
+
 /* test 1 : basic argument test: all those calls to SDL_RWFromFile should fail */
 	
 	rwops = SDL_RWFromFile(NULL,NULL);

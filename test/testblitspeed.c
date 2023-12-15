@@ -213,6 +213,17 @@ static int setup_test(int argc, char **argv)
     int screenSurface = 0;
     int i = 0;
 
+#if defined(SDL_SLB) && (defined(__atarist__) || defined(__TOS__))
+	{
+		long slbret;
+		if ((slbret = slb_sdl_open(NULL)) < 0)
+		{
+			fprintf(stderr, "cannot load " SDL_SHAREDLIB_NAME ": %ld\n", slbret);
+			return 1;
+		}
+	}
+#endif
+
     for (i = 1; i < argc; i++)
     {
         const char *arg = argv[i];
