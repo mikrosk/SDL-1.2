@@ -87,6 +87,7 @@ struct SDL_PrivateVideoData {
 	SDL_bool locked;			/* AES locked for fullscreen ? */
 	SDL_bool lock_redraw;		/* Prevent redraw till buffers are setup */
 	SDL_bool cursor_hidden;		/* Mouse cursor hidden flag */
+	SDL_bool align_windows;		/* align windows to 16-pixel boundary */
 	short message[8];			/* To self-send an AES message */
 	void *menubar;				/* Menu bar save buffer when going fullscreen */
 	SDL_bool use_dev_mouse;		/* Use /dev/mouse ? */
@@ -134,6 +135,7 @@ struct SDL_PrivateVideoData {
 #define GEM_locked			(this->hidden->locked)
 #define GEM_lock_redraw		(this->hidden->lock_redraw)
 #define GEM_cursor_hidden	(this->hidden->cursor_hidden)
+#define GEM_align_windows	(this->hidden->align_windows)
 #define GEM_message			(this->hidden->message)
 #define SDL_modelist		(this->hidden->SDL_modelist)
 #define GEM_icon			(this->hidden->icon)

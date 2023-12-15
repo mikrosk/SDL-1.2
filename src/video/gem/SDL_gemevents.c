@@ -240,6 +240,10 @@ static int do_messages(_THIS, short *message, short latest_msg_id)
 			update_work_area = 1;
 			break;
 		case WM_SIZED:
+			/* width must be multiple of 16, for vro_cpyfm() and c2p_convert() */
+			if ((message[6] & 15) != 0) {
+				message[6] = (message[6] | 15) +1;
+			}
 			wind_set_grect (message[3], WF_CURRXYWH, (GRECT *)&message[4]);
 			update_work_area = sdl_resize = 1;
 			GEM_win_fulled = SDL_FALSE;		/* Cancel maximized flag */
