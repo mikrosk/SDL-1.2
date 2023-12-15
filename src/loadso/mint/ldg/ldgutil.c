@@ -43,7 +43,7 @@
 
 int ldg_cookie(long cookie, long *value)
 {
-	long *cookiejar = (long *) Setexc(0x5a0 / 4, (void (*)())-1);
+	long *cookiejar = (long *) Setexc(0x5a0 / 4, (void (*)(void))-1);
 
 	if (cookiejar)
 	{
@@ -152,6 +152,6 @@ void ldg_cpush(void)
 	}
 
 	if (_cpu > 30)
-		Supexec((long (*)()) do_cpush);
+		Supexec((long (*)(void)) do_cpush);
 }
 #endif

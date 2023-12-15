@@ -29,6 +29,7 @@
  */
 
 #include <gem.h>
+#include <gemx.h>
 #include "gem_aesP.h"
 #include "gem_vdiP.h"
 
