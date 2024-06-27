@@ -86,3 +86,8 @@ test/threadwin
 test/torturethread
 test/testcursor
 test/testloadso
+
+# Qt Creator
+.qtc_clangd/
+xxx/
+include/SDL_config.h
