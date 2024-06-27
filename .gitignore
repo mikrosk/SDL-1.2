@@ -90,3 +90,6 @@ test/testcursor
 test/testloadso
 include/SDL_config.h
 src/SDL.d
+
+# Qt Creator
+.qtc_clangd/
