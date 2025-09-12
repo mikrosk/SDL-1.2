@@ -118,6 +118,8 @@ static Uint8 *MINTAUD_GetAudioBuf(_THIS)
 
 static void MINTAUD_CloseAudio(_THIS)
 {
+	AtariSoundSetupDeinitXbios();
+
 	if ( this->hidden->mixbuf != NULL ) {
 		SDL_FreeAudioMem(this->hidden->mixbuf);
 		this->hidden->mixbuf = NULL;
@@ -126,6 +128,64 @@ static void MINTAUD_CloseAudio(_THIS)
 
 static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 {
+	AudioSpec atari_spec_desired, atari_spec_obtained;
+
+	atari_spec_desired.channels = spec->channels;
+	atari_spec_desired.frequency = spec->freq;
+	atari_spec_desired.samples = spec->samples;
+	switch (spec->format) {
+		case AUDIO_U8:
+			atari_spec_desired.format = AudioFormatUnsigned8;
+			break;
+		case AUDIO_S8:
+			atari_spec_desired.format = AudioFormatSigned8;
+			break;
+		case AUDIO_U16LSB:
+			atari_spec_desired.format = AudioFormatUnsigned16LSB;
+			break;
+		case AUDIO_S16LSB:
+			atari_spec_desired.format = AudioFormatSigned16LSB;
+			break;
+		case AUDIO_U16MSB:
+			atari_spec_desired.format = AudioFormatUnsigned16MSB;
+			break;
+		case AUDIO_S16MSB:
+			atari_spec_desired.format = AudioFormatSigned16MSB;
+			break;
+		default:
+			return(-1);
+	}
+
+	if (!AtariSoundSetupInitXbios(&atari_spec_desired, &atari_spec_obtained))
+		return(-1);
+
+	spec->channels = atari_spec_obtained.channels;
+	spec->freq = atari_spec_obtained.frequency;
+	spec->samples = atari_spec_obtained.samples;
+	switch (atari_spec_obtained.format) {
+		case AudioFormatUnsigned8:
+			spec->format = AUDIO_U8;
+			break;
+		case AudioFormatSigned8:
+			spec->format = AUDIO_S8;
+			break;
+		case AudioFormatUnsigned16LSB:
+			spec->format = AUDIO_U16LSB;
+			break;
+		case AudioFormatSigned16LSB:
+			spec->format = AUDIO_S16LSB;
+			break;
+		case AudioFormatUnsigned16MSB:
+			spec->format = AUDIO_U16MSB;
+			break;
+		case AudioFormatSigned16MSB:
+			spec->format = AUDIO_S16MSB;
+			break;
+		default:
+			AtariSoundSetupDeinitXbios();
+			return(-1);
+	}
+
 	float bytes_per_sec = 0.0f;
 
 	/* Allocate mixing buffer */
