@@ -3,319 +3,154 @@
     Copyright (C) 1997-2012 Sam Lantinga
 
     This library is free software; you can redistribute it and/or
-    modify it under the terms of the GNU Library General Public
+    modify it under the terms of the GNU Lesser General Public
     License as published by the Free Software Foundation; either
-    version 2 of the License, or (at your option) any later version.
+    version 2.1 of the License, or (at your option) any later version.
 
     This library is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-    Library General Public License for more details.
+    Lesser General Public License for more details.
 
-    You should have received a copy of the GNU Library General Public
-    License along with this library; if not, write to the Free
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    You should have received a copy of the GNU Lesser General Public
+    License along with this library; if not, write to the Free Software
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
     Sam Lantinga
     slouken@libsdl.org
+
+    This file written by Miro Kropacek (miro.kropacek@gmail.com)
 */
 #include "SDL_config.h"
 
-/*
-	Audio interrupt variables and callback function
+#include <usound.h>
 
-	Patrice Mandin
-*/
-
-#include <unistd.h>
-
-#include <mint/osbind.h>
-#include <mint/falcon.h>
-#include <mint/mintbind.h>
-#include <mint/cookie.h>
-
+#include "SDL_rwops.h"
+#include "SDL_timer.h"
 #include "SDL_audio.h"
+#include "../SDL_audiomem.h"
 #include "../SDL_audio_c.h"
-#include "../SDL_sysaudio.h"
-
-#include "../../video/ataricommon/SDL_atarimxalloc_c.h"
-
+#include "../SDL_audiodev_c.h"
 #include "SDL_mintaudio.h"
 
-/* The audio device */
+/* The tag name used by DUMMY audio */
+#define MINTAUD_DRIVER_NAME         "mint"
 
-#define MAX_DMA_BUF	8
+/* Audio driver functions */
+static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec);
+static void MINTAUD_WaitAudio(_THIS);
+static void MINTAUD_PlayAudio(_THIS);
+static Uint8 *MINTAUD_GetAudioBuf(_THIS);
+static void MINTAUD_CloseAudio(_THIS);
 
-SDL_AudioDevice *SDL_MintAudio_device;
-
-static int SDL_MintAudio_num_upd;	/* Number of calls to update function */
-static int SDL_MintAudio_max_buf;	/* Number of buffers to use */
-static int SDL_MintAudio_numbuf;	/* Buffer to play */
-
-static void SDL_MintAudio_Callback(void);
-
-/* MiNT thread variables */
-SDL_bool SDL_MintAudio_mint_present;
-SDL_bool SDL_MintAudio_quit_thread;
-SDL_bool SDL_MintAudio_thread_finished;
-long SDL_MintAudio_thread_pid;
-
-/* Debug print info */
-#define DEBUG_NAME "audio:mint: "
-#if 0
-#define DEBUG_PRINT(what) \
-	{ \
-		printf what; \
-	}
-#else
-#define DEBUG_PRINT(what)
-#endif
-
-/* Initialize DMA buffers */
-
-int SDL_MintAudio_InitBuffers(SDL_AudioSpec *spec)
+/* Audio driver bootstrap functions */
+static int MINTAUD_Available(void)
 {
-	int dmabuflen;
-	SDL_AudioDevice *this = SDL_MintAudio_device;
-
-	SDL_CalculateAudioSpec(spec);
-	MINTAUDIO_audiosize = spec->size * MAX_DMA_BUF;
-
-	/* Allocate audio buffer memory for application in FastRAM */
-	MINTAUDIO_fastrambuf = Atari_SysMalloc(MINTAUDIO_audiosize, MX_TTRAM);
-	if (MINTAUDIO_fastrambuf) {
-		SDL_memset(MINTAUDIO_fastrambuf, spec->silence, MINTAUDIO_audiosize);
+	const char *envr = SDL_getenv("SDL_AUDIODRIVER");
+	if (envr && (SDL_strcmp(envr, MINTAUD_DRIVER_NAME) == 0)) {
+		return(1);
 	}
-
-	/* Allocate audio buffers memory for hardware in DMA-able RAM */
-	dmabuflen = ((2 * MINTAUDIO_audiosize) | 3)+1;
-	MINTAUDIO_audiobuf[0] = Atari_SysMalloc(dmabuflen, MX_STRAM);
-	if (MINTAUDIO_audiobuf[0]==NULL) {
-		SDL_SetError("SDL_MintAudio_OpenAudio: Not enough memory for audio buffer");
-		return (0);
-	}
-	MINTAUDIO_audiobuf[1] = MINTAUDIO_audiobuf[0] + MINTAUDIO_audiosize;
-	SDL_memset(MINTAUDIO_audiobuf[0], spec->silence, dmabuflen);
-
-	DEBUG_PRINT((DEBUG_NAME "buffer 0 at 0x%p\n", MINTAUDIO_audiobuf[0]));
-	DEBUG_PRINT((DEBUG_NAME "buffer 1 at 0x%p\n", MINTAUDIO_audiobuf[1]));
-
-	SDL_MintAudio_numbuf = SDL_MintAudio_num_its = SDL_MintAudio_num_upd = 0;
-	SDL_MintAudio_max_buf = MAX_DMA_BUF;
-
-	/* For filling silence when too many interrupts per update */
-	SDL_MintAudio_itbuffer = MINTAUDIO_audiobuf[0];
-	SDL_MintAudio_itbuflen = (dmabuflen >> 2)-1;
-	SDL_MintAudio_itsilence = (spec->silence << 24)|(spec->silence << 16)|
-		(spec->silence << 8)|spec->silence;
-
-	return (1);
+	return(0);
 }
 
-/* Destroy DMA buffers */
-
-void SDL_MintAudio_FreeBuffers(void)
+static void MINTAUD_DeleteDevice(SDL_AudioDevice *device)
 {
-	SDL_AudioDevice *this = SDL_MintAudio_device;
-
-	if (MINTAUDIO_fastrambuf) {
-		Mfree(MINTAUDIO_fastrambuf);
-		MINTAUDIO_fastrambuf = NULL;
-	}
-	if (MINTAUDIO_audiobuf[0]) {
-		Mfree(MINTAUDIO_audiobuf[0]);
-		SDL_MintAudio_itbuffer = MINTAUDIO_audiobuf[0] = MINTAUDIO_audiobuf[1] = NULL;
-	}
+	SDL_free(device->hidden);
+	SDL_free(device);
 }
 
-/* Update buffers */
-
-void SDL_AtariMint_UpdateAudio(void)
+static SDL_AudioDevice *MINTAUD_CreateDevice(int devindex)
 {
-	SDL_AudioDevice *this = SDL_MintAudio_device;
+	SDL_AudioDevice *this;
 
-	++SDL_MintAudio_num_upd;
-
-	/* No interrupt triggered? still playing current buffer */
-	if (SDL_MintAudio_num_its==0) {
-		return;
+	/* Initialize all variables that we clean on shutdown */
+	this = (SDL_AudioDevice *)SDL_malloc(sizeof(SDL_AudioDevice));
+	if ( this ) {
+		SDL_memset(this, 0, (sizeof *this));
+		this->hidden = (struct SDL_PrivateAudioData *)
+				SDL_malloc((sizeof *this->hidden));
 	}
-
-	if (SDL_MintAudio_num_upd < (SDL_MintAudio_num_its<<2)) {
-		/* Too many interrupts per update, increase latency */
-		if (SDL_MintAudio_max_buf < MAX_DMA_BUF) {
-			SDL_MintAudio_max_buf <<= 1;
+	if ( (this == NULL) || (this->hidden == NULL) ) {
+		SDL_OutOfMemory();
+		if ( this ) {
+			SDL_free(this);
 		}
-	} else if (SDL_MintAudio_num_its < (SDL_MintAudio_num_upd<<2)) {
-		/* Too many updates per interrupt, decrease latency */
-		if (SDL_MintAudio_max_buf > 1) {
-			SDL_MintAudio_max_buf >>= 1;
-		}
+		return(0);
 	}
-	MINTAUDIO_audiosize = this->spec.size * SDL_MintAudio_max_buf;
+	SDL_memset(this->hidden, 0, (sizeof *this->hidden));
 
-	SDL_MintAudio_num_its = 0;
-	SDL_MintAudio_num_upd = 0;
+	/* Set the function pointers */
+	this->OpenAudio = MINTAUD_OpenAudio;
+	this->WaitAudio = MINTAUD_WaitAudio;
+	this->PlayAudio = MINTAUD_PlayAudio;
+	this->GetAudioBuf = MINTAUD_GetAudioBuf;
+	this->CloseAudio = MINTAUD_CloseAudio;
 
-	SDL_MintAudio_numbuf ^= 1;
+	this->free = MINTAUD_DeleteDevice;
 
-	/* Fill new buffer */
-	SDL_MintAudio_Callback();
-
-	/* And swap to it */
-	(*MINTAUDIO_swapbuf)(MINTAUDIO_audiobuf[SDL_MintAudio_numbuf], MINTAUDIO_audiosize);
+	return this;
 }
 
-/* The callback function, called by each driver whenever needed */
+AudioBootStrap MINTAUD_bootstrap = {
+	MINTAUD_DRIVER_NAME, "SDL mint audio driver",
+	MINTAUD_Available, MINTAUD_CreateDevice
+};
 
-static void SDL_MintAudio_Callback(void)
+/* This function waits until it is possible to write a full sound buffer */
+static void MINTAUD_WaitAudio(_THIS)
 {
-	SDL_AudioDevice *this = SDL_MintAudio_device;
-	Uint8 *buffer;
-	int i;
-
- 	buffer = (MINTAUDIO_fastrambuf ?
-		MINTAUDIO_fastrambuf :
-		MINTAUDIO_audiobuf[SDL_MintAudio_numbuf]);
-	SDL_memset(buffer, this->spec.silence, this->spec.size * SDL_MintAudio_max_buf);
-
-	if (!this->paused) {
-		for (i=0; i<SDL_MintAudio_max_buf; i++) {
-			if (this->convert.needed) {
-				int silence;
-
-				if ( this->convert.src_format == AUDIO_U8 ) {
-					silence = 0x80;
-				} else {
-					silence = 0;
-				}
-				SDL_memset(this->convert.buf, silence, this->convert.len);
-				this->spec.callback(this->spec.userdata,
-					(Uint8 *)this->convert.buf,this->convert.len);
-				SDL_ConvertAudio(&this->convert);
-				SDL_memcpy(buffer, this->convert.buf, this->convert.len_cvt);
-
-				buffer += this->convert.len_cvt;
-			} else {
-				this->spec.callback(this->spec.userdata, buffer,
-					this->spec.size);
-
-				buffer += this->spec.size;
-			}
-		}
-	}
-
-	if (MINTAUDIO_fastrambuf) {
-		SDL_memcpy(MINTAUDIO_audiobuf[SDL_MintAudio_numbuf], MINTAUDIO_fastrambuf,
-			this->spec.size * SDL_MintAudio_max_buf);
-	}
+	/* Don't block on first calls to simulate initial fragment filling. */
+	if (this->hidden->initial_calls)
+		this->hidden->initial_calls--;
+	else
+		SDL_Delay(this->hidden->write_delay);
 }
 
-/* Add a new frequency/clock/predivisor to the current list */
-void SDL_MintAudio_AddFrequency(_THIS, Uint32 frequency, Uint32 clock,
-	Uint32 prediv, int gpio_bits)
+static void MINTAUD_PlayAudio(_THIS)
 {
-	int i, p;
-
-	if (MINTAUDIO_freqcount==MINTAUDIO_maxfreqs) {
-		return;
-	}
-
-	/* Search where to insert the frequency (highest first) */
-	for (p=0; p<MINTAUDIO_freqcount; p++) {
-		if (frequency > MINTAUDIO_frequencies[p].frequency) {
-			break;
-		}
-	}
-
-	/* Put all following ones farer */
-	if (MINTAUDIO_freqcount>0) {
-		for (i=MINTAUDIO_freqcount; i>p; i--) {
-			SDL_memcpy(&MINTAUDIO_frequencies[i], &MINTAUDIO_frequencies[i-1], sizeof(mint_frequency_t));
-		}
-	}
-
-	/* And insert new one */
-	MINTAUDIO_frequencies[p].frequency = frequency;
-	MINTAUDIO_frequencies[p].masterclock = clock;
-	MINTAUDIO_frequencies[p].predivisor = prediv;
-	MINTAUDIO_frequencies[p].gpio_bits = gpio_bits;
-
-	MINTAUDIO_freqcount++;
+	/* no-op...this is a null driver. */
 }
 
-/* Search for the nearest frequency */
-int SDL_MintAudio_SearchFrequency(_THIS, int desired_freq)
+static Uint8 *MINTAUD_GetAudioBuf(_THIS)
 {
-	int i;
-
-	/* Only 1 freq ? */
-	if (MINTAUDIO_freqcount==1) {
-		return 0;
-	}
-
-	/* Check the array */
-	for (i=0; i<MINTAUDIO_freqcount; i++) {
-		if (desired_freq >= ((MINTAUDIO_frequencies[i].frequency+
-			MINTAUDIO_frequencies[i+1].frequency)>>1)) {
-			return i;
-		}
-	}
-
-	/* Not in the array, give the latest */
-	return MINTAUDIO_freqcount-1;
+	return(this->hidden->mixbuf);
 }
 
-/* The thread function, used under MiNT with xbios */
-int SDL_MintAudio_Thread(long param)
+static void MINTAUD_CloseAudio(_THIS)
 {
-	SndBufPtr	pointers;
-	SDL_bool	buffers_filled[2] = {SDL_FALSE, SDL_FALSE};
-	SDL_AudioDevice *this = SDL_MintAudio_device;
-
-	SDL_MintAudio_thread_finished = SDL_FALSE;
-	while (!SDL_MintAudio_quit_thread) {
-		if (Buffptr(&pointers)!=0)
-			continue;
-
-		if (( (unsigned long)pointers.play>=(unsigned long)MINTAUDIO_audiobuf[0])
-			&& ( (unsigned long)pointers.play<=(unsigned long)MINTAUDIO_audiobuf[1])) 
-		{
-			/* DMA is reading buffer #0, setup buffer #1 if not already done */
-			if (!buffers_filled[1]) {
-				SDL_MintAudio_numbuf = 1;
-				SDL_MintAudio_Callback();
-				Setbuffer(0, MINTAUDIO_audiobuf[1], MINTAUDIO_audiobuf[1] + MINTAUDIO_audiosize);
-				buffers_filled[1]=SDL_TRUE;
-				buffers_filled[0]=SDL_FALSE;
-			}
-		} else {
-			/* DMA is reading buffer #1, setup buffer #0 if not already done */
-			if (!buffers_filled[0]) {
-				SDL_MintAudio_numbuf = 0;
-				SDL_MintAudio_Callback();
-				Setbuffer(0, MINTAUDIO_audiobuf[0], MINTAUDIO_audiobuf[0] + MINTAUDIO_audiosize);
-				buffers_filled[0]=SDL_TRUE;
-				buffers_filled[1]=SDL_FALSE;
-			}
-		}
-
-		usleep(100);
+	if ( this->hidden->mixbuf != NULL ) {
+		SDL_FreeAudioMem(this->hidden->mixbuf);
+		this->hidden->mixbuf = NULL;
 	}
-	SDL_MintAudio_thread_finished = SDL_TRUE;
-	return 0;
 }
 
-void SDL_MintAudio_WaitThread(void)
+static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 {
-	if (!SDL_MintAudio_mint_present)
-		return;
+	float bytes_per_sec = 0.0f;
 
-	if (SDL_MintAudio_thread_finished)
-		return;
-
-	SDL_MintAudio_quit_thread = SDL_TRUE;
-	while (!SDL_MintAudio_thread_finished) {
-		Syield();
+	/* Allocate mixing buffer */
+	this->hidden->mixlen = spec->size;
+	this->hidden->mixbuf = (Uint8 *) SDL_AllocAudioMem(this->hidden->mixlen);
+	if ( this->hidden->mixbuf == NULL ) {
+		return(-1);
 	}
+	SDL_memset(this->hidden->mixbuf, spec->silence, spec->size);
+
+	bytes_per_sec = (float) (((spec->format & 0xFF) / 8) *
+	                   spec->channels * spec->freq);
+
+	/*
+	 * We try to make this request more audio at the correct rate for
+	 *  a given audio spec, so timing stays fairly faithful.
+	 * Also, we have it not block at all for the first two calls, so
+	 *  it seems like we're filling two audio fragments right out of the
+	 *  gate, like other SDL drivers tend to do.
+	 */
+	this->hidden->initial_calls = 2;
+	this->hidden->write_delay =
+	               (Uint32) ((((float) spec->size) / bytes_per_sec) * 1000.0f);
+
+	/* We're ready to rock and roll. :-) */
+	return(0);
 }
+

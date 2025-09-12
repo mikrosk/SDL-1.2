@@ -155,11 +155,7 @@ extern AudioBootStrap COREAUDIO_bootstrap;
 extern AudioBootStrap SNDMGR_bootstrap;
 #endif
 #if SDL_AUDIO_DRIVER_MINT
-extern AudioBootStrap MINTAUDIO_GSXB_bootstrap;
-extern AudioBootStrap MINTAUDIO_MCSN_bootstrap;
-extern AudioBootStrap MINTAUDIO_STFA_bootstrap;
-extern AudioBootStrap MINTAUDIO_XBIOS_bootstrap;
-extern AudioBootStrap MINTAUDIO_DMA8_bootstrap;
+extern AudioBootStrap MINTAUD_bootstrap;
 #endif
 #if SDL_AUDIO_DRIVER_DISK
 extern AudioBootStrap DISKAUD_bootstrap;
@@ -183,7 +179,7 @@ extern AudioBootStrap MMEAUDIO_bootstrap;
 extern AudioBootStrap DART_bootstrap;
 #endif
 #if SDL_AUDIO_DRIVER_EPOCAUDIO
-extern AudioBootStrap EPOCAudio_bootstrap; 
+extern AudioBootStrap EPOCAudio_bootstrap;
 #endif
 
 /* This is the current audio device */

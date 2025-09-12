@@ -54,22 +54,11 @@ Mouse (XBIOS, GEM(2), Ikbd)
 Video (XBIOS (Fullscreen), GEM (Windowed and Fullscreen))
 Timer (Timer C interrupt, GNU pth library)
 Joysticks (XBIOS, Ikbd) and joypads (Hardware)
-Audio (Hardware, XBIOS, GSXB, MCSN, STFA, /dev/audio if threads enabled)
+Audio (XBIOS, Hardware; using uSound library from https://github.com/mikrosk/usound)
 Threads (Multitasking OS only via GNU pth library)
 Shared object loader (using LDG library from http://ldg.atari.org/)
 Audio CD (MetaDOS)
 OpenGL (using Mesa offscreen rendering driver)
-
-Audio   O/S     Misc
-dma8    All     Uses MFP Timer A interrupt
-xbios	TOS     Uses MFP Timer A interrupt
-xbios   MiNT    Uses MFP Timer A interrupt
-xbios   Magic   Uses MFP Timer A interrupt
-stfa    All     Uses MFP interrupt
-mcsn	TOS     Uses MFP Timer A interrupt
-mcsn    MiNT    Uses MiNT thread
-mcsn    Magic   Disabled
-gsxb    All     Uses GSXB callback
 
 Joypad driver always uses hardware access.
 OpenGL driver always uses OSMesa.
@@ -92,15 +81,6 @@ SDL_VIDEO_GL_DRIVER:
 SDL_VIDEO_ALIGNED_WINDOWS:
 	Set to force aligning of the window's x coordinate to a 16-pixel boundary
 	(e.g. for speed reasons)
-
-SDL_AUDIODRIVER:
-	Set to 'mint_gsxb' to force Atari GSXB audio driver
-	Set to 'mint_mcsn' to force Atari MCSN audio driver
-	Set to 'mint_stfa' to force Atari STFA audio driver
-	Set to 'mint_xbios' to force Atari Xbios audio driver
-	Set to 'mint_dma8' to force Atari 8 bits DMA audio driver
-	Set to 'audio' to force Sun /dev/audio audio driver
-	Set to 'disk' to force disk-writing audio driver
 
 SDL_ATARI_EVENTSDRIVER
 	Set to 'ikbd' to force IKBD 6301 events driver
@@ -224,30 +204,10 @@ Timer driver:
 	multitasking OS , timers are supported via the pth library. Otherwise
 	Timer C is used (which should be available on all machines).
 
-Audio drivers:
-	Cookies _SND, MCSN, STFA and GSXB used to detect supported audio
-	capabilities.
-
-	STE, Mega STE, TT:
-		8 bits DMA (hardware access)
-		STFA, MCSN or GSXB driver if installed
-	Falcon:
-		8 bits DMA (hardware access)
-		Xbios functions
-		STFA, MCSN or GSXB driver if installed
-	Other machines:
-		STFA, MCSN or GSXB driver if installed
-
-	STFA driver:
-		http://removers.free.fr/softs/stfa.html
-	GSXB driver:
-		http://assemsoft.atari.org/gsxb/
-	MacSound driver:
-		http://jf.omnis.ch/software/tos/
-	MagicSound driver (MCSN,GSXB compatible):
-		http://perso.wanadoo.fr/didierm/
-	X-Sound driver (GSXB compatible):
-		http://www.uni-ulm.de/~s_thuth/atari/xsound_e.html
+Audio driver:
+	Uses uSound for detection and setup. On STE/TT one has to provide an
+	external XBIOS sound driver (EmuTOS, X-Sound, STFA), same with the clones.
+	See https://mikrosk.github.io/xbios for more information.
 
 --
 Patrice Mandin <patmandin@gmail.com>
