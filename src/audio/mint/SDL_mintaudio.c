@@ -31,9 +31,12 @@
 #include "../SDL_audiomem.h"
 #include "../SDL_audio_c.h"
 #include "../SDL_audiodev_c.h"
+
+#include "../../video/ataricommon/SDL_atarimxalloc_c.h"
+
 #include "SDL_mintaudio.h"
 
-/* The tag name used by DUMMY audio */
+/* The tag name used by MINT audio */
 #define MINTAUD_DRIVER_NAME         "mint"
 
 /* Audio driver functions */
@@ -96,14 +99,93 @@ AudioBootStrap MINTAUD_bootstrap = {
 	MINTAUD_Available, MINTAUD_CreateDevice
 };
 
+/* The mixing function, closely mimicking SDL_RunAudio() */
+static SDL_AudioDevice *audiop;
+static void __attribute__((interrupt)) RunAudio(void)
+{
+	SDL_AudioDevice *audio = (SDL_AudioDevice *)audiop;
+	Uint8 *stream;
+	int    stream_len;
+	void  *udata;
+	void (SDLCALL *fill)(void *userdata,Uint8 *stream, int len);
+	int    silence;
+
+	/* Set up the mixing function */
+	fill  = audio->spec.callback;
+	udata = audio->spec.userdata;
+
+	if (audio->convert.needed) {
+		if (audio->convert.src_format == AUDIO_U8) {
+			silence = 0x80;
+		} else {
+			silence = 0;
+		}
+		stream_len = audio->convert.len;
+	} else {
+		silence = audio->spec.silence;
+		stream_len = audio->spec.size;
+	}
+
+	/* Loop, filling the audio buffers */
+	if (audio->enabled) {
+		/* Fill the current buffer with sound */
+		if (audio->convert.needed) {
+			if (audio->convert.buf) {
+				stream = audio->convert.buf;
+			} else {
+				goto RunAudio_done;
+			}
+		} else {
+			stream = audio->GetAudioBuf(audio);
+			if (stream == NULL) {
+				stream = audio->fake_stream;
+			}
+		}
+
+		SDL_memset(stream, silence, stream_len);
+
+		if (!audio->paused) {
+			(*fill)(udata, stream, stream_len);
+		}
+
+		/* Convert the audio if necessary */
+		if (audio->convert.needed) {
+			SDL_ConvertAudio(&audio->convert);
+			stream = audio->GetAudioBuf(audio);
+			if (stream == NULL) {
+				stream = audio->fake_stream;
+			}
+			SDL_memcpy(stream, audio->convert.buf, audio->convert.len_cvt);
+		}
+
+		/* Ready current buffer for play and change current buffer */
+		if (stream != audio->fake_stream) {
+			audio->PlayAudio(audio);
+		}
+
+		/* Wait for an audio buffer to become available */
+		if (stream == audio->fake_stream) {
+			SDL_Delay((audio->spec.samples*1000)/audio->spec.freq);
+		} else {
+			audio->WaitAudio(audio);
+		}
+	}
+
+RunAudio_done:
+	/* Clear in service bit. */
+	*((volatile Uint8 *)0xFFFFFA0FL) &= ~(1<<5);
+}
+
+static void enableTimerASei(void)
+{
+	/* Software end-of-interrupt mode. */
+	*((volatile Uint8 *)0xFFFFFA17L) |= (1<<3);
+}
+
 /* This function waits until it is possible to write a full sound buffer */
 static void MINTAUD_WaitAudio(_THIS)
 {
-	/* Don't block on first calls to simulate initial fragment filling. */
-	if (this->hidden->initial_calls)
-		this->hidden->initial_calls--;
-	else
-		SDL_Delay(this->hidden->write_delay);
+	/* Nothing to do here. */
 }
 
 static void MINTAUD_PlayAudio(_THIS)
@@ -118,11 +200,21 @@ static Uint8 *MINTAUD_GetAudioBuf(_THIS)
 
 static void MINTAUD_CloseAudio(_THIS)
 {
+	Buffoper(0x00);	/* disable playback */
+	Jdisint(MFP_TIMERA);
+
 	AtariSoundSetupDeinitXbios();
 
-	if ( this->hidden->mixbuf != NULL ) {
+	if (this->hidden->mixbuf != NULL) {
 		SDL_FreeAudioMem(this->hidden->mixbuf);
 		this->hidden->mixbuf = NULL;
+	}
+
+	if (this->hidden->strambuf != NULL) {
+		Mfree(this->hidden->strambuf);
+		this->hidden->strambuf = NULL;
+
+		this->hidden->physbuf = this->hidden->logbuf = NULL;
 	}
 }
 
@@ -182,35 +274,40 @@ static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 			spec->format = AUDIO_S16MSB;
 			break;
 		default:
-			AtariSoundSetupDeinitXbios();
 			return(-1);
 	}
 
-	float bytes_per_sec = 0.0f;
-
 	/* Allocate mixing buffer */
 	this->hidden->mixlen = spec->size;
-	this->hidden->mixbuf = (Uint8 *) SDL_AllocAudioMem(this->hidden->mixlen);
-	if ( this->hidden->mixbuf == NULL ) {
+	this->hidden->mixbuf = (Uint8 *)SDL_AllocAudioMem(this->hidden->mixlen);
+	if (this->hidden->mixbuf == NULL)
 		return(-1);
-	}
 	SDL_memset(this->hidden->mixbuf, spec->silence, spec->size);
 
-	bytes_per_sec = (float) (((spec->format & 0xFF) / 8) *
-	                   spec->channels * spec->freq);
+	this->hidden->strambuf = (Uint8 *)Atari_SysMalloc(2 * this->hidden->mixlen, MX_STRAM);
+	if (this->hidden->strambuf == NULL)
+		return(-1);
+	SDL_memset(this->hidden->strambuf, spec->silence, 2 * spec->size);
 
-	/*
-	 * We try to make this request more audio at the correct rate for
-	 *  a given audio spec, so timing stays fairly faithful.
-	 * Also, we have it not block at all for the first two calls, so
-	 *  it seems like we're filling two audio fragments right out of the
-	 *  gate, like other SDL drivers tend to do.
-	 */
-	this->hidden->initial_calls = 2;
-	this->hidden->write_delay =
-	               (Uint32) ((((float) spec->size) / bytes_per_sec) * 1000.0f);
+	this->hidden->physbuf = this->hidden->strambuf;
+	this->hidden->logbuf = this->hidden->strambuf + spec->size;
 
-	/* We're ready to rock and roll. :-) */
-	return(0);
+	/* Atari initialization. */
+	audiop = this;
+
+	if (Setbuffer(SR_PLAY, this->hidden->physbuf, this->hidden->physbuf + spec->size) != 0)
+		return(-1);
+
+	if (Setinterrupt(SI_TIMERA, SI_PLAY) != 0)
+		return(-1);
+
+	Xbtimer(XB_TIMERA, 1<<3, 1, RunAudio);	/* event count mode, count to '1' */
+	Supexec(enableTimerASei);
+	Jenabint(MFP_TIMERA);
+
+	/* Start playback. */
+	if (Buffoper(SB_PLA_ENA | SB_PLA_RPT) != 0)
+		return(-1);
+
+	return(1);	/* We don't use SDL threaded audio */
 }
-
