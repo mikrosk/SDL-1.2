@@ -104,6 +104,8 @@ void AtariXbios_InitOSKeymap(_THIS)
 
 void AtariXbios_PumpEvents(_THIS)
 {
+	SDL_AtariMint_BackgroundTasks();
+
 	SDL_AtariXbios_PostKeyboardEvents(this);
 	SDL_AtariXbios_PostMouseEvents(this, SDL_TRUE);
 }
@@ -174,7 +176,7 @@ void SDL_AtariXbios_PostMouseEvents(_THIS, SDL_bool buttonEvents)
 		SDL_PrivateMouseMotion(0, 1, SDL_AtariXbios_mousex, SDL_AtariXbios_mousey);
 		SDL_AtariXbios_mousex = SDL_AtariXbios_mousey = 0;
 	}
-	
+
 	/* Mouse button ? */
 	if (buttonEvents && (SDL_AtariXbios_mouseb != atari_prevmouseb)) {
 		int i;

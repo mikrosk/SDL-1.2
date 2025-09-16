@@ -33,10 +33,15 @@ struct SDL_PrivateAudioData {
 	/* The file descriptor for the audio device */
 	Uint8 *mixbuf;
 	Uint32 mixlen;
-	Uint8 *strambuf;
 
+	Uint8 *strambuf;
 	Uint8 *physbuf;
 	Uint8 *logbuf;
+    enum
+    {
+        SDL_ATARI_PHYSBUF,
+        SDL_ATARI_LOGBUF
+    } playing;
 };
 
 #endif /* _SDL_mintaudio_h */

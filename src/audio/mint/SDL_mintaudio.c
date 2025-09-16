@@ -23,6 +23,8 @@
 */
 #include "SDL_config.h"
 
+#include <mint/osbind.h>
+#include <mint/sysvars.h>
 #include <usound.h>
 
 #include "SDL_rwops.h"
@@ -50,10 +52,11 @@ static void MINTAUD_CloseAudio(_THIS);
 static int MINTAUD_Available(void)
 {
 	const char *envr = SDL_getenv("SDL_AUDIODRIVER");
-	if (envr && (SDL_strcmp(envr, MINTAUD_DRIVER_NAME) == 0)) {
-		return(1);
+	if (envr && (SDL_strcmp(envr, MINTAUD_DRIVER_NAME) != 0)) {
+		return(0);
 	}
-	return(0);
+	/* Return always available unless user wanted a different one */
+	return(1);
 }
 
 static void MINTAUD_DeleteDevice(SDL_AudioDevice *device)
@@ -101,7 +104,7 @@ AudioBootStrap MINTAUD_bootstrap = {
 
 /* The mixing function, closely mimicking SDL_RunAudio() */
 static SDL_AudioDevice *audiop;
-static void __attribute__((interrupt)) RunAudio(void)
+static void RunAudio(void)
 {
 	SDL_AudioDevice *audio = (SDL_AudioDevice *)audiop;
 	Uint8 *stream;
@@ -133,7 +136,7 @@ static void __attribute__((interrupt)) RunAudio(void)
 			if (audio->convert.buf) {
 				stream = audio->convert.buf;
 			} else {
-				goto RunAudio_done;
+				return;
 			}
 		} else {
 			stream = audio->GetAudioBuf(audio);
@@ -155,6 +158,7 @@ static void __attribute__((interrupt)) RunAudio(void)
 			if (stream == NULL) {
 				stream = audio->fake_stream;
 			}
+			/* TODO: avoid copying twice (here and in PlayAudio) */
 			SDL_memcpy(stream, audio->convert.buf, audio->convert.len_cvt);
 		}
 
@@ -162,24 +166,51 @@ static void __attribute__((interrupt)) RunAudio(void)
 		if (stream != audio->fake_stream) {
 			audio->PlayAudio(audio);
 		}
-
+#if 0
 		/* Wait for an audio buffer to become available */
 		if (stream == audio->fake_stream) {
 			SDL_Delay((audio->spec.samples*1000)/audio->spec.freq);
 		} else {
 			audio->WaitAudio(audio);
 		}
+#endif
 	}
-
-RunAudio_done:
-	/* Clear in service bit. */
-	*((volatile Uint8 *)0xFFFFFA0FL) &= ~(1<<5);
 }
 
-static void enableTimerASei(void)
+static SDL_bool InstallVblHandler()
 {
-	/* Software end-of-interrupt mode. */
-	*((volatile Uint8 *)0xFFFFFA17L) |= (1<<3);
+	int i;
+	SDL_bool installed = SDL_FALSE;
+	*vblsem = 0;	/* lock vbl */
+
+	for (i = 0; i < *nvbls; ++i) {
+		if (!(*_vblqueue)[i]) {
+			(*_vblqueue)[i] = RunAudio;
+			installed = SDL_TRUE;
+			break;
+		}
+	}
+
+	*vblsem = 1;	/* unlock vbl */
+	return installed;
+}
+
+static SDL_bool UninstallVblHandler()
+{
+	int i;
+	SDL_bool uninstalled = SDL_FALSE;
+	*vblsem = 0;	/* lock vbl */
+
+	for (i = 0; i < *nvbls; ++i) {
+		if ((*_vblqueue)[i] == RunAudio) {
+			(*_vblqueue)[i] = NULL;
+			uninstalled = SDL_TRUE;
+			break;
+		}
+	}
+
+	*vblsem = 1;	/* unlock vbl */
+	return uninstalled;
 }
 
 /* This function waits until it is possible to write a full sound buffer */
@@ -190,7 +221,27 @@ static void MINTAUD_WaitAudio(_THIS)
 
 static void MINTAUD_PlayAudio(_THIS)
 {
-	/* no-op...this is a null driver. */
+	SndBufPtr bufptr;
+	if (Buffptr(&bufptr) != 0) {
+		return;
+	}
+
+	/* The assumption here is that this function is called always at least once
+	 * for every mixlen bytes, i.e. that VBL is triggered every <= 20 ms.
+	 * Perhaps it would be better if we always filled as much space as possible
+	 * (basically the second buffer + already replayed part of the first one)
+	 */
+	if (this->hidden->playing == SDL_ATARI_PHYSBUF) {
+		if ((Uint8 *)bufptr.play < this->hidden->logbuf) {
+			SDL_memcpy(this->hidden->logbuf, this->hidden->mixbuf, this->hidden->mixlen);
+			this->hidden->playing = SDL_ATARI_LOGBUF;
+		}
+	} else if (this->hidden->playing == SDL_ATARI_LOGBUF) {
+		if ((Uint8 *)bufptr.play >= this->hidden->logbuf) {
+			SDL_memcpy(this->hidden->physbuf, this->hidden->mixbuf, this->hidden->mixlen);
+			this->hidden->playing = SDL_ATARI_PHYSBUF;
+		}
+	}
 }
 
 static Uint8 *MINTAUD_GetAudioBuf(_THIS)
@@ -201,7 +252,8 @@ static Uint8 *MINTAUD_GetAudioBuf(_THIS)
 static void MINTAUD_CloseAudio(_THIS)
 {
 	Buffoper(0x00);	/* disable playback */
-	Jdisint(MFP_TIMERA);
+
+	Supexec(UninstallVblHandler);
 
 	AtariSoundSetupDeinitXbios();
 
@@ -222,9 +274,9 @@ static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 {
 	AudioSpec atari_spec_desired, atari_spec_obtained;
 
-	atari_spec_desired.channels = spec->channels;
+	atari_spec_desired.channels  = spec->channels;
 	atari_spec_desired.frequency = spec->freq;
-	atari_spec_desired.samples = spec->samples;
+	atari_spec_desired.samples   = spec->samples;
 	switch (spec->format) {
 		case AUDIO_U8:
 			atari_spec_desired.format = AudioFormatUnsigned8;
@@ -252,8 +304,8 @@ static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 		return(-1);
 
 	spec->channels = atari_spec_obtained.channels;
-	spec->freq = atari_spec_obtained.frequency;
-	spec->samples = atari_spec_obtained.samples;
+	spec->freq     = atari_spec_obtained.frequency;
+	/*spec->samples  = atari_spec_obtained.samples;*/
 	switch (atari_spec_obtained.format) {
 		case AudioFormatUnsigned8:
 			spec->format = AUDIO_U8;
@@ -276,36 +328,39 @@ static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 		default:
 			return(-1);
 	}
+	/* This is allocates enough samples for one 50 Hz frame */
+	spec->samples = ((spec->freq * 20 / 1000) + 1) & -2;
 
 	/* Allocate mixing buffer */
-	this->hidden->mixlen = spec->size;
+	this->hidden->mixlen = spec->samples * spec->channels * (spec->format&0xFF)/8;
 	this->hidden->mixbuf = (Uint8 *)SDL_AllocAudioMem(this->hidden->mixlen);
 	if (this->hidden->mixbuf == NULL)
 		return(-1);
-	SDL_memset(this->hidden->mixbuf, spec->silence, spec->size);
+	SDL_memset(this->hidden->mixbuf, spec->silence, this->hidden->mixlen);
 
+	/* Double-buffered */
 	this->hidden->strambuf = (Uint8 *)Atari_SysMalloc(2 * this->hidden->mixlen, MX_STRAM);
 	if (this->hidden->strambuf == NULL)
 		return(-1);
-	SDL_memset(this->hidden->strambuf, spec->silence, 2 * spec->size);
+	SDL_memset(this->hidden->strambuf, spec->silence, 2 * this->hidden->mixlen);
 
 	this->hidden->physbuf = this->hidden->strambuf;
-	this->hidden->logbuf = this->hidden->strambuf + spec->size;
+	this->hidden->logbuf  = this->hidden->strambuf + this->hidden->mixlen;
 
-	/* Atari initialization. */
+	this->hidden->playing = SDL_ATARI_PHYSBUF;
+	/* Audio is started as paused but it is expected that the backend is playing
+	 * silence by now
+	 */
+	if (Setbuffer(SR_PLAY, this->hidden->strambuf, this->hidden->strambuf + 2 * this->hidden->mixlen) != 0)
+		return(-1);
+
+	/* Even if this is recalculated, the VBL handler may use it immediatelly */
+	this->spec.size = this->hidden->mixlen;
 	audiop = this;
-
-	if (Setbuffer(SR_PLAY, this->hidden->physbuf, this->hidden->physbuf + spec->size) != 0)
+	if (!Supexec(InstallVblHandler))
 		return(-1);
 
-	if (Setinterrupt(SI_TIMERA, SI_PLAY) != 0)
-		return(-1);
-
-	Xbtimer(XB_TIMERA, 1<<3, 1, RunAudio);	/* event count mode, count to '1' */
-	Supexec(enableTimerASei);
-	Jenabint(MFP_TIMERA);
-
-	/* Start playback. */
+	/* Start playback */
 	if (Buffoper(SB_PLA_ENA | SB_PLA_RPT) != 0)
 		return(-1);
 
