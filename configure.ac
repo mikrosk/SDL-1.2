@@ -690,7 +690,6 @@ CheckAtariAudio()
             mintaudio=yes
             AC_DEFINE(SDL_AUDIO_DRIVER_MINT)
             SOURCES="$SOURCES $srcdir/src/audio/mint/*.c"
-            SOURCES="$SOURCES $srcdir/src/audio/mint/*.S"
             have_audio=yes
         fi
     fi
