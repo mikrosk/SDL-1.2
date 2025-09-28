@@ -71,6 +71,8 @@ static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors);
 
 void SDL_XBIOS_VideoInit_Milan(_THIS)
 {
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
+
 	XBIOS_listModes = listModes;
 	XBIOS_saveMode = saveMode;
 	XBIOS_setMode = setMode;
@@ -88,6 +90,8 @@ static unsigned long /*cdecl*/ enumfunc(SCREENINFO *inf, unsigned long flag)
 {
 	xbiosmode_t modeinfo;
 
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
+
 	modeinfo.number = inf->devID;
 	modeinfo.width = inf->scrWidth;
 	modeinfo.height = inf->scrHeight;
@@ -95,6 +99,7 @@ static unsigned long /*cdecl*/ enumfunc(SCREENINFO *inf, unsigned long flag)
 	modeinfo.flags = 0;
 
 	SDL_XBIOS_AddMode(enum_this, enum_actually_add, &modeinfo);
+	printf("added: %dx%d@%d\n", modeinfo.width, modeinfo.height, modeinfo.depth);
 
 	return ENUMMODE_CONT;
 }
@@ -102,6 +107,8 @@ static unsigned long /*cdecl*/ enumfunc(SCREENINFO *inf, unsigned long flag)
 static void listModes(_THIS, int actually_add)
 {
 	int i;
+
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 
 	/* Read validated predefined modes */
 	for (i=0; i<sizeof(mode_list)/sizeof(predefined_mode_t); i++) {
@@ -119,27 +126,38 @@ static void listModes(_THIS, int actually_add)
 				modeinfo.flags = 0;
 
 				SDL_XBIOS_AddMode(this, actually_add, &modeinfo);
+				printf("added: %dx%d@%d\n", modeinfo.width, modeinfo.height, modeinfo.depth);
 			}
 		}
 	}
+
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 
 	/* Read custom created modes */
 	enum_this = this;
 	enum_actually_add = actually_add;
 	VsetScreen(-1, &enumfunc, MI_MAGIC, CMD_ENUMMODES);
+
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 }
 
 static void saveMode(_THIS, SDL_PixelFormat *vformat)
 {
 	SCREENINFO si = { 0 };
 
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
+
 	/* Read infos about current mode */
 	VsetScreen(-1, &XBIOS_oldvmode, MI_MAGIC, CMD_GETMODE);
+
+	printf("%s:%d: %08x\n", __FUNCTION__, __LINE__, XBIOS_oldvmode);
 
 	si.size = sizeof(SCREENINFO);
 	si.devID = XBIOS_oldvmode;
 	si.scrFlags = 0;
 	VsetScreen(-1, &si, MI_MAGIC, CMD_GETINFO);
+
+	printf("%s:%d: %dx%d, %p, %d\n", __FUNCTION__, __LINE__, si.scrWidth, si.scrHeight, si.frameadr, si.scrPlanes);
 
 	this->info.current_w = si.scrWidth;
 	this->info.current_h = si.scrHeight;
@@ -147,13 +165,20 @@ static void saveMode(_THIS, SDL_PixelFormat *vformat)
 	XBIOS_oldvbase = (void*)si.frameadr;
 
 	vformat->BitsPerPixel = si.scrPlanes;
+
+	if (si.scrFlags & SCRINFO_OK) {
+		printf("%s:%d: %d\n", __FUNCTION__, __LINE__, si.scrPlanes);
+	}
 }
 
 static void setMode(_THIS, const xbiosmode_t *new_video_mode)
 {
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 	VsetScreen(-1, XBIOS_screens[0], MI_MAGIC, CMD_SETADR);
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 
 	VsetScreen(-1, new_video_mode->number, MI_MAGIC, CMD_SETMODE);
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 
 	/* Set hardware palette to black in True Colour */
 	if (new_video_mode->depth > 8) {
@@ -164,13 +189,18 @@ static void setMode(_THIS, const xbiosmode_t *new_video_mode)
 
 static void restoreMode(_THIS)
 {
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 	VsetScreen(-1, XBIOS_oldvbase, MI_MAGIC, CMD_SETADR);
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 	VsetScreen(-1, XBIOS_oldvmode, MI_MAGIC, CMD_SETMODE);
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 }
 
 static void swapVbuffers(_THIS)
 {
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 	VsetScreen(-1, -1, MI_MAGIC, CMD_FLIPPAGE);
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 }
 
 static int getLineWidth(_THIS, const xbiosmode_t *new_video_mode, int width, int bpp)
@@ -182,8 +212,11 @@ static int getLineWidth(_THIS, const xbiosmode_t *new_video_mode, int width, int
 	si.size = sizeof(SCREENINFO);
 	si.devID = new_video_mode->number;
 	si.scrFlags = 0;
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 	VsetScreen(-1, &si, VN_MAGIC, CMD_GETINFO);
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 	if (si.scrFlags & SCRINFO_OK) {
+		printf("%s:%d: %d\n", __FUNCTION__, __LINE__, si.lineWrap);
 		retvalue = si.lineWrap;
 	}
 
@@ -198,8 +231,11 @@ static int allocVbuffers(_THIS, const xbiosmode_t *new_video_mode, int num_buffe
 		if (i==0) {
 			/* Buffer 0 is current screen */
 			XBIOS_screensmem[i] = XBIOS_oldvbase;
+			printf("%s:%d: %p\n", __FUNCTION__, __LINE__, XBIOS_oldvbase);
 		} else {
+			printf("%s:%d\n", __FUNCTION__, __LINE__);
 			VsetScreen(&XBIOS_screensmem[i], new_video_mode->number, MI_MAGIC, CMD_ALLOCPAGE);
+			printf("%s:%d\n", __FUNCTION__, __LINE__);
 		}
 
 		if (!XBIOS_screensmem[i]) {
@@ -211,6 +247,8 @@ static int allocVbuffers(_THIS, const xbiosmode_t *new_video_mode, int num_buffe
 		XBIOS_screens[i]=XBIOS_screensmem[i];
 	}
 
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
+
 	return (1);
 }
 
@@ -218,21 +256,30 @@ static void freeVbuffers(_THIS)
 {
 	int i;
 
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
+
 	for (i=0;i<2;i++) {
 		if (XBIOS_screensmem[i]) {
 			if (i==1) {
+				printf("%s:%d\n", __FUNCTION__, __LINE__);
 				VsetScreen(-1, -1, MI_MAGIC, CMD_FREEPAGE);
+				printf("%s:%d\n", __FUNCTION__, __LINE__);
 			} else {
 				/* Do not touch buffer 0 */
+				printf("%s:%d\n", __FUNCTION__, __LINE__);
 			}
 			XBIOS_screensmem[i]=NULL;
 		}
 	}
+
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 }
 
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 {
 	int i, r,g,b;
+
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 
 	for(i = 0; i < ncolors; i++) {
 		r = colors[i].r;
@@ -241,7 +288,9 @@ static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 
 		F30_palette[i]=(r<<16)|(g<<8)|b;
 	}
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 	VsetRGB(firstcolor,ncolors,F30_palette);
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 
 	return (1);
 }

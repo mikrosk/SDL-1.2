@@ -109,7 +109,7 @@ static int XBIOS_Available(void)
 	}
 
 	/* fVDI/Milan means graphic card, so no Xbios with it */
-	if (Getcookie(C_fVDI, NULL) == C_FOUND || (cookie_vdo >>16) == VDO_MILAN) {
+	if (Getcookie(C_fVDI, NULL) == C_FOUND) {
 		const char *envr = SDL_getenv("SDL_VIDEODRIVER");
 
 		if (!envr) {

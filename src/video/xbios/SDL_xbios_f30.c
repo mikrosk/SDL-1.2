@@ -179,6 +179,8 @@ static void listModes(_THIS, int actually_add)
 	const xbiosmode_t *f30_modes = NULL;
 	xbiosmode_t modeinfo;
 
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
+
 	if (has_supervidel) {
 		/* SuperVidel specific modes */
 		max_modes = sizeof(sv_modes)/sizeof(xbiosmode_t);
@@ -212,8 +214,10 @@ static void listModes(_THIS, int actually_add)
 
 static void saveMode(_THIS, SDL_PixelFormat *vformat)
 {
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 	XBIOS_oldvbase=Physbase();
 	XBIOS_oldvmode=VsetMode(-1);
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 }
 
 static void setMode(_THIS, const xbiosmode_t *new_video_mode)
@@ -231,13 +235,19 @@ static void setMode(_THIS, const xbiosmode_t *new_video_mode)
 
 static void restoreMode(_THIS)
 {
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
+	
 	Setscreen(-1,XBIOS_oldvbase,-1);
 	(void) VsetMode(XBIOS_oldvmode);
+
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 }
 
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 {
 	int i, r,g,b;
+
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 
 	for(i = 0; i < ncolors; i++) {
 		r = colors[i].r;
@@ -248,6 +258,8 @@ static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 	}
 	VsetRGB(firstcolor,ncolors,F30_palette);
 
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
+
 	return (1);
 }
 
@@ -255,6 +267,8 @@ static int allocVbuffers_SV(_THIS, const xbiosmode_t *new_video_mode, int num_bu
 {
 	int i;
 	Uint32 tmp;
+
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 
 	for (i=0; i<num_buffers; i++) {
 		XBIOS_screensmem[i] = Atari_SysMalloc(bufsize, MX_STRAM);
@@ -270,6 +284,8 @@ static int allocVbuffers_SV(_THIS, const xbiosmode_t *new_video_mode, int num_bu
 		tmp |= 0xA0000000UL;	/* Map to SV memory */
 		XBIOS_screens[i] = (void *) tmp;
 	}
+
+	printf("%s:%d\n", __FUNCTION__, __LINE__);
 
 	return (1);
 }
