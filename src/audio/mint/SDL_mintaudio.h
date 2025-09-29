@@ -42,6 +42,9 @@ struct SDL_PrivateAudioData {
         SDL_ATARI_PHYSBUF,
         SDL_ATARI_LOGBUF
     } playing;
+
+	Uint8 *stack;
+	Uint32 stacksize;
 };
 
 #endif /* _SDL_mintaudio_h */

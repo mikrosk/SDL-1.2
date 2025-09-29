@@ -103,8 +103,7 @@ AudioBootStrap MINTAUD_bootstrap = {
 };
 
 /* The mixing function, closely mimicking SDL_RunAudio() */
-static SDL_AudioDevice *audiop;
-static void RunAudio(void)
+static void RunAudio(void *audiop)
 {
 	SDL_AudioDevice *audio = (SDL_AudioDevice *)audiop;
 	Uint8 *stream;
@@ -177,6 +176,30 @@ static void RunAudio(void)
 	}
 }
 
+static SDL_AudioDevice *audiop;
+static void RunAudioWrapper(void)
+{
+	Uint32 oldsp = 0;
+	__asm__ __volatile__
+	(
+		"	move.l	%%sp,%0\n"
+		"	move.l	%3,%%sp\n"
+
+		/* RunAudio(audiop); */
+		"	move.l	%2,%%sp@-\n"
+		"	jsr		(%1)\n"
+		"	lea		%%sp@(12),%%sp\n"
+
+		"	move.l	%0,%%sp\n"
+
+		: "+g"(oldsp)	/* outputs */
+		: "a"(RunAudio), "g"(audiop),
+		  "g"(audiop->hidden->stack + audiop->hidden->stacksize)	/* inputs  */
+		: "d0", "d1", "d2", "a0", "a1", "a2", "cc"	/* clobbered regs */
+		  AND_MEMORY
+	);
+}
+
 static SDL_bool InstallVblHandler()
 {
 	int i;
@@ -185,7 +208,7 @@ static SDL_bool InstallVblHandler()
 
 	for (i = 0; i < *nvbls; ++i) {
 		if (!(*_vblqueue)[i]) {
-			(*_vblqueue)[i] = RunAudio;
+			(*_vblqueue)[i] = RunAudioWrapper;
 			installed = SDL_TRUE;
 			break;
 		}
@@ -202,7 +225,7 @@ static SDL_bool UninstallVblHandler()
 	*vblsem = 0;	/* lock vbl */
 
 	for (i = 0; i < *nvbls; ++i) {
-		if ((*_vblqueue)[i] == RunAudio) {
+		if ((*_vblqueue)[i] == RunAudioWrapper) {
 			(*_vblqueue)[i] = NULL;
 			uninstalled = SDL_TRUE;
 			break;
@@ -221,10 +244,15 @@ static void MINTAUD_WaitAudio(_THIS)
 
 static void MINTAUD_PlayAudio(_THIS)
 {
-	SndBufPtr bufptr;
-	if (Buffptr(&bufptr) != 0) {
-		return;
-	}
+	Uint32 play;
+
+	/* select replay registers */
+	*(volatile Uint8 *)0xFF8901 &= ~(1 << 7);
+
+	play
+		= (*(volatile Uint8 *)0xFF8909 << 16)
+		| (*(volatile Uint8 *)0xFF890B << 8)
+		| (*(volatile Uint8 *)0xFF890D << 0);
 
 	/* The assumption here is that this function is called always at least once
 	 * for every mixlen bytes, i.e. that VBL is triggered every <= 20 ms.
@@ -232,12 +260,12 @@ static void MINTAUD_PlayAudio(_THIS)
 	 * (basically the second buffer + already replayed part of the first one)
 	 */
 	if (this->hidden->playing == SDL_ATARI_PHYSBUF) {
-		if ((Uint8 *)bufptr.play < this->hidden->logbuf) {
+		if (play < (Uint32)this->hidden->logbuf) {
 			SDL_memcpy(this->hidden->logbuf, this->hidden->mixbuf, this->hidden->mixlen);
 			this->hidden->playing = SDL_ATARI_LOGBUF;
 		}
 	} else if (this->hidden->playing == SDL_ATARI_LOGBUF) {
-		if ((Uint8 *)bufptr.play >= this->hidden->logbuf) {
+		if (play >= (Uint32)this->hidden->logbuf) {
 			SDL_memcpy(this->hidden->physbuf, this->hidden->mixbuf, this->hidden->mixlen);
 			this->hidden->playing = SDL_ATARI_PHYSBUF;
 		}
@@ -267,6 +295,12 @@ static void MINTAUD_CloseAudio(_THIS)
 		this->hidden->strambuf = NULL;
 
 		this->hidden->physbuf = this->hidden->logbuf = NULL;
+	}
+
+	if (this->hidden->stack != NULL) {
+		SDL_free(this->hidden->stack);
+		this->hidden->stack = NULL;
+		this->hidden->stacksize = 0;
 	}
 }
 
@@ -346,6 +380,15 @@ static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 
 	this->hidden->physbuf = this->hidden->strambuf;
 	this->hidden->logbuf  = this->hidden->strambuf + this->hidden->mixlen;
+
+	{
+		/* a bit hacky way to ensure that the audio stack can be altered from outside */
+		extern Uint32 _stksize;
+		this->hidden->stack = (Uint8 *)SDL_malloc(_stksize);
+		if (this->hidden->stack == NULL)
+			return(-1);
+		this->hidden->stacksize = _stksize;
+	}
 
 	this->hidden->playing = SDL_ATARI_PHYSBUF;
 	/* Audio is started as paused but it is expected that the backend is playing
