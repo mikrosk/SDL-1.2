@@ -198,7 +198,7 @@ static void RunAudio(void *audiop)
 static SDL_AudioDevice *audiop;
 static void __attribute__((interrupt)) RunAudioWrapper(void)
 {
-	Uint32 oldsp = 0;
+	static Uint32 oldsp;
 	__asm__ __volatile__
 	(
 		"	move.l	%%sp,%0\n"
@@ -207,7 +207,7 @@ static void __attribute__((interrupt)) RunAudioWrapper(void)
 		/* RunAudio(audiop); */
 		"	move.l	%2,%%sp@-\n"
 		"	jsr		(%1)\n"
-		"	lea		%%sp@(12),%%sp\n"
+		"	addq.l	#4,%%sp\n"
 
 		"	move.l	%0,%%sp\n"
 
