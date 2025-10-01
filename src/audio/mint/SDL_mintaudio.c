@@ -24,7 +24,6 @@
 #include "SDL_config.h"
 
 #include <mint/osbind.h>
-#include <mint/sysvars.h>
 #include <usound.h>
 
 #include "SDL_rwops.h"
@@ -197,7 +196,7 @@ static void RunAudio(void *audiop)
 }
 
 static SDL_AudioDevice *audiop;
-static void RunAudioWrapper(void)
+static void __attribute__((interrupt)) RunAudioWrapper(void)
 {
 	Uint32 oldsp = 0;
 	__asm__ __volatile__
@@ -218,48 +217,35 @@ static void RunAudioWrapper(void)
 		: "d0", "d1", "d2", "a0", "a1", "a2", "cc"	/* clobbered regs */
 		  AND_MEMORY
 	);
+
+	/* Clear in service bit */
+	*((volatile Uint8 *)0xFFFFFA0FL) &= ~(1<<5);
 }
 
-static SDL_bool InstallVblHandler()
+static void EnableSei(void)
 {
-	int i;
-	SDL_bool installed = SDL_FALSE;
-	*vblsem = 0;	/* lock vbl */
-
-	for (i = 0; i < *nvbls; ++i) {
-		if (!(*_vblqueue)[i]) {
-			(*_vblqueue)[i] = RunAudioWrapper;
-			installed = SDL_TRUE;
-			break;
-		}
-	}
-
-	*vblsem = 1;	/* unlock vbl */
-	return installed;
+	/* Software end-of-interrupt mode */
+	*((volatile Uint8 *)0xFFFFFA17L) |= (1<<3);
 }
 
-static SDL_bool UninstallVblHandler()
+static void SetPlayBuffer(Uint8 *start, Uint8 *end)
 {
-	int i;
-	SDL_bool uninstalled = SDL_FALSE;
-	*vblsem = 0;	/* lock vbl */
+	const Uint32 startl = (Uint32)start;
+	const Uint32 endl   = (Uint32)end;
 
-	for (i = 0; i < *nvbls; ++i) {
-		if ((*_vblqueue)[i] == RunAudioWrapper) {
-			(*_vblqueue)[i] = NULL;
-			uninstalled = SDL_TRUE;
-			break;
-		}
-	}
+	*(volatile Uint8 *)0xFF8903 = startl >> 16;
+	*(volatile Uint8 *)0xFF8905 = startl >> 8;
+	*(volatile Uint8 *)0xFF8907 = startl;
 
-	*vblsem = 1;	/* unlock vbl */
-	return uninstalled;
+	*(volatile Uint8 *)0xFF890F = endl >> 16;
+	*(volatile Uint8 *)0xFF8911 = endl >> 8;
+	*(volatile Uint8 *)0xFF8913 = endl;
 }
 
 /* This function waits until it is possible to write a full sound buffer */
 static void MINTAUD_WaitAudio(_THIS)
 {
-	/* Nothing to do here. */
+	/* Nothing to do here */
 }
 
 static void MINTAUD_PlayAudio(_THIS)
@@ -274,19 +260,16 @@ static void MINTAUD_PlayAudio(_THIS)
 		| (*(volatile Uint8 *)0xFF890B << 8)
 		| (*(volatile Uint8 *)0xFF890D << 0);
 
-	/* The assumption here is that this function is called always at least once
-	 * for every mixlen bytes, i.e. that VBL is triggered every <= 20 ms.
-	 * Perhaps it would be better if we always filled as much space as possible
-	 * (basically the second buffer + already replayed part of the first one)
-	 */
 	if (this->hidden->playing == SDL_ATARI_PHYSBUF) {
 		if (play < (Uint32)this->hidden->logbuf) {
 			SDL_memcpy(this->hidden->logbuf, this->hidden->mixbuf, this->hidden->mixlen);
+			SetPlayBuffer(this->hidden->logbuf, this->hidden->logbuf + this->hidden->mixlen);
 			this->hidden->playing = SDL_ATARI_LOGBUF;
 		}
 	} else if (this->hidden->playing == SDL_ATARI_LOGBUF) {
 		if (play >= (Uint32)this->hidden->logbuf) {
 			SDL_memcpy(this->hidden->physbuf, this->hidden->mixbuf, this->hidden->mixlen);
+			SetPlayBuffer(this->hidden->physbuf, this->hidden->physbuf + this->hidden->mixlen);
 			this->hidden->playing = SDL_ATARI_PHYSBUF;
 		}
 	}
@@ -300,8 +283,7 @@ static Uint8 *MINTAUD_GetAudioBuf(_THIS)
 static void MINTAUD_CloseAudio(_THIS)
 {
 	Buffoper(0x00);	/* disable playback */
-
-	Supexec(UninstallVblHandler);
+	Jdisint(MFP_TIMERA);
 
 	AtariSoundSetupDeinitXbios();
 
@@ -382,7 +364,7 @@ static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 		default:
 			return(-1);
 	}
-	/* This is allocates enough samples for one 50 Hz frame */
+	/* This is allocates enough samples for 20ms (roughly one 50 Hz frame) */
 	spec->samples = ((spec->freq * 20 / 1000) + 1) & -2;
 
 	/* Allocate mixing buffer */
@@ -402,7 +384,7 @@ static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 	this->hidden->logbuf  = this->hidden->strambuf + this->hidden->mixlen;
 
 	{
-		/* a bit hacky way to ensure that the audio stack can be altered from outside */
+		/* Hacky way to ensure that the audio stack can be altered from outside */
 		extern Uint32 _stksize;
 		this->hidden->stack = (Uint8 *)SDL_malloc(_stksize);
 		if (this->hidden->stack == NULL)
@@ -414,14 +396,19 @@ static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 	/* Audio is started as paused but it is expected that the backend is playing
 	 * silence by now
 	 */
-	if (Setbuffer(SR_PLAY, this->hidden->strambuf, this->hidden->strambuf + 2 * this->hidden->mixlen) != 0)
+	if (Setbuffer(SR_PLAY, this->hidden->physbuf, this->hidden->physbuf + this->hidden->mixlen) != 0)
 		return(-1);
 
-	/* Even if this is recalculated, the VBL handler may use it immediatelly */
+	/* Even if this is recalculated, the interrupt handler may use it immediatelly */
 	this->spec.size = this->hidden->mixlen;
 	audiop = this;
-	if (!Supexec(InstallVblHandler))
+
+	if (Setinterrupt(SI_TIMERA, SI_PLAY) != 0)
 		return(-1);
+
+	Xbtimer(XB_TIMERA, 1<<3, 1, RunAudioWrapper);	/* event count mode, count to '1' */
+	Supexec(EnableSei);
+	Jenabint(MFP_TIMERA);
 
 	/* Start playback */
 	if (Buffoper(SB_PLA_ENA | SB_PLA_RPT) != 0)
