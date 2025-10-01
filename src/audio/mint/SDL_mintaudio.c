@@ -112,6 +112,14 @@ static void RunAudio(void *audiop)
 	void (SDLCALL *fill)(void *userdata,Uint8 *stream, int len);
 	int    silence;
 
+#if 0
+	/* Perform any thread setup */
+	if (audio->ThreadInit) {
+		audio->ThreadInit(audio);
+	}
+	audio->threadid = SDL_ThreadID();
+#endif
+
 	/* Set up the mixing function */
 	fill  = audio->spec.callback;
 	udata = audio->spec.userdata;
@@ -129,13 +137,14 @@ static void RunAudio(void *audiop)
 	}
 
 	/* Loop, filling the audio buffers */
-	if (audio->enabled) {
+	/*while*/if (audio->enabled) {
+
 		/* Fill the current buffer with sound */
 		if (audio->convert.needed) {
 			if (audio->convert.buf) {
 				stream = audio->convert.buf;
 			} else {
-				return;
+				/*continue*/return;
 			}
 		} else {
 			stream = audio->GetAudioBuf(audio);
@@ -147,7 +156,9 @@ static void RunAudio(void *audiop)
 		SDL_memset(stream, silence, stream_len);
 
 		if (!audio->paused) {
+			/*SDL_mutexP(audio->mixer_lock);*/
 			(*fill)(udata, stream, stream_len);
+			/*SDL_mutexV(audio->mixer_lock);*/
 		}
 
 		/* Convert the audio if necessary */
@@ -174,6 +185,15 @@ static void RunAudio(void *audiop)
 		}
 #endif
 	}
+
+#if 0
+	/* Wait for the audio to drain.. */
+	if (audio->WaitDone) {
+		audio->WaitDone(audio);
+	}
+
+	return(0);
+#endif
 }
 
 static SDL_AudioDevice *audiop;
