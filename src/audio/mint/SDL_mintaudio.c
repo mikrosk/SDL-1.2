@@ -260,11 +260,13 @@ static void MINTAUD_PlayAudio(_THIS)
 {
 	if (this->hidden->playing == SDL_ATARI_PHYSBUF) {
 		SDL_memcpy(this->hidden->logbuf, this->hidden->mixbuf, this->hidden->mixlen);
-		SetPlayBuffer(this->hidden->logbuf, this->hidden->logbuf + this->hidden->mixlen);
+		//SetPlayBuffer(this->hidden->logbuf, this->hidden->logbuf + this->hidden->mixlen);
+		Setbuffer(SR_PLAY, this->hidden->logbuf, this->hidden->logbuf + this->hidden->mixlen);
 		this->hidden->playing = SDL_ATARI_LOGBUF;
 	} else if (this->hidden->playing == SDL_ATARI_LOGBUF) {
 		SDL_memcpy(this->hidden->physbuf, this->hidden->mixbuf, this->hidden->mixlen);
-		SetPlayBuffer(this->hidden->physbuf, this->hidden->physbuf + this->hidden->mixlen);
+		//SetPlayBuffer(this->hidden->physbuf, this->hidden->physbuf + this->hidden->mixlen);
+		Setbuffer(SR_PLAY, this->hidden->physbuf, this->hidden->physbuf + this->hidden->mixlen);
 		this->hidden->playing = SDL_ATARI_PHYSBUF;
 	}
 }
