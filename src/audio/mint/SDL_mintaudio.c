@@ -218,6 +218,11 @@ static void __attribute__((interrupt)) RunAudioWrapper(void)
 		  AND_MEMORY
 	);
 
+	/* Clear pending bit; if the callback is too CPU heavy, we don't want
+	 * to flood the system with endless pending interrupts...
+	 */
+	*((volatile Uint8 *)0xFFFFFA0BL) &= ~(1<<5);
+
 	/* Clear in service bit */
 	*((volatile Uint8 *)0xFFFFFA0FL) &= ~(1<<5);
 }
