@@ -144,6 +144,7 @@ src/audio/mint/SDL_mintaudio_mcsn.h
 src/audio/mint/SDL_mintaudio_stfa.c
 src/audio/mint/SDL_mintaudio_stfa.h
 src/audio/mint/SDL_mintaudio_xbios.c
+src/audio/mint/SDL_mintaudiointerrupt.S
 src/audio/mme/SDL_mmeaudio.c
 src/audio/mme/SDL_mmeaudio.h
 src/audio/nas/SDL_nasaudio.c
