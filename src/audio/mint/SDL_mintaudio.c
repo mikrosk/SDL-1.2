@@ -23,15 +23,12 @@
 */
 #include "SDL_config.h"
 
+#include <mint/cookie.h>
 #include <mint/osbind.h>
 #include <usound.h>
 
-#include "SDL_rwops.h"
-#include "SDL_timer.h"
 #include "SDL_audio.h"
 #include "../SDL_audiomem.h"
-#include "../SDL_audio_c.h"
-#include "../SDL_audiodev_c.h"
 
 #include "../../video/ataricommon/SDL_atarimxalloc_c.h"
 
@@ -39,6 +36,13 @@
 
 /* The tag name used by MINT audio */
 #define MINTAUD_DRIVER_NAME         "mint"
+
+extern void SDL_MintAudio_TimerA(void);
+
+extern SDL_AudioDevice *SDL_MintAudio_audiop;
+extern void *SDL_MintAudio_stack;
+
+unsigned short SDL_MintAudio_hasfpu;
 
 /* Audio driver functions */
 static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec);
@@ -102,7 +106,7 @@ AudioBootStrap MINTAUD_bootstrap = {
 };
 
 /* The mixing function, closely mimicking SDL_RunAudio() */
-static void RunAudio(void *audiop)
+void SDL_MintAudio_RunAudio(void *audiop)
 {
 	SDL_AudioDevice *audio = (SDL_AudioDevice *)audiop;
 	Uint8 *stream;
@@ -195,61 +199,6 @@ static void RunAudio(void *audiop)
 #endif
 }
 
-static SDL_AudioDevice *audiop;
-static void __attribute__((interrupt)) RunAudioWrapper(void)
-{
-	static Uint32 oldsp;
-	__asm__ __volatile__
-	(
-		"	move.l	%%sp,%0\n"
-		"	move.l	%3,%%sp\n"
-
-		/* RunAudio(audiop); */
-		"	move.l	%2,%%sp@-\n"
-		"	jsr		(%1)\n"
-		"	addq.l	#4,%%sp\n"
-
-		"	move.l	%0,%%sp\n"
-
-		: "+g"(oldsp)	/* outputs */
-		: "a"(RunAudio), "g"(audiop),
-		  "g"(audiop->hidden->stack + audiop->hidden->stacksize)	/* inputs  */
-		: "d0", "d1", "d2", "a0", "a1", "a2", "cc"	/* clobbered regs */
-		  AND_MEMORY
-	);
-
-	/* Clear pending bit; if the callback is too CPU heavy, we don't want
-	 * to flood the system with endless pending interrupts...
-	 */
-	*((volatile Uint8 *)0xFFFFFA0BL) &= ~(1<<5);
-
-	/* Clear in service bit */
-	*((volatile Uint8 *)0xFFFFFA0FL) &= ~(1<<5);
-}
-
-static void EnableSei(void)
-{
-	/* Software end-of-interrupt mode */
-	*((volatile Uint8 *)0xFFFFFA17L) |= (1<<3);
-}
-
-static void SetPlayBuffer(Uint8 *start, Uint8 *end)
-{
-	const Uint32 startl = (Uint32)start;
-	const Uint32 endl   = (Uint32)end;
-
-	/* select replay registers */
-	*(volatile Uint8 *)0xFF8901 &= ~(1 << 7);
-
-	*(volatile Uint8 *)0xFF8903 = startl >> 16;
-	*(volatile Uint8 *)0xFF8905 = startl >> 8;
-	*(volatile Uint8 *)0xFF8907 = startl;
-
-	*(volatile Uint8 *)0xFF890F = endl >> 16;
-	*(volatile Uint8 *)0xFF8911 = endl >> 8;
-	*(volatile Uint8 *)0xFF8913 = endl;
-}
-
 /* This function waits until it is possible to write a full sound buffer */
 static void MINTAUD_WaitAudio(_THIS)
 {
@@ -260,11 +209,11 @@ static void MINTAUD_PlayAudio(_THIS)
 {
 	if (this->hidden->playing == SDL_ATARI_PHYSBUF) {
 		SDL_memcpy(this->hidden->logbuf, this->hidden->mixbuf, this->hidden->mixlen);
-		SetPlayBuffer(this->hidden->logbuf, this->hidden->logbuf + this->hidden->mixlen);
+		Setbuffer(SR_PLAY, this->hidden->logbuf, this->hidden->logbuf + this->hidden->mixlen);
 		this->hidden->playing = SDL_ATARI_LOGBUF;
 	} else if (this->hidden->playing == SDL_ATARI_LOGBUF) {
 		SDL_memcpy(this->hidden->physbuf, this->hidden->mixbuf, this->hidden->mixlen);
-		SetPlayBuffer(this->hidden->physbuf, this->hidden->physbuf + this->hidden->mixlen);
+		Setbuffer(SR_PLAY, this->hidden->physbuf, this->hidden->physbuf + this->hidden->mixlen);
 		this->hidden->playing = SDL_ATARI_PHYSBUF;
 	}
 }
@@ -297,6 +246,25 @@ static void MINTAUD_CloseAudio(_THIS)
 		SDL_free(this->hidden->stack);
 		this->hidden->stack = NULL;
 		this->hidden->stacksize = 0;
+	}
+}
+
+static void CheckFpu(void)
+{
+	long cookie_fpu;
+
+	SDL_MintAudio_hasfpu = SDL_FALSE;
+	if (Getcookie(C__FPU, &cookie_fpu) != C_FOUND) {
+		return;
+	}
+	switch ((cookie_fpu>>16)&0xfffe) {
+	case 2:
+	case 4:
+	case 6:
+	case 8:
+	case 16:
+		SDL_MintAudio_hasfpu = SDL_TRUE;
+		break;
 	}
 }
 
@@ -361,6 +329,8 @@ static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 	/* This is allocates enough samples for 20ms (roughly one 50 Hz frame) */
 	spec->samples = ((spec->freq * 20 / 1000) + 1) & -2;
 
+	CheckFpu();
+
 	/* Allocate mixing buffer */
 	this->hidden->mixlen = spec->samples * spec->channels * (spec->format&0xFF)/8;
 	this->hidden->mixbuf = (Uint8 *)SDL_AllocAudioMem(this->hidden->mixlen);
@@ -395,13 +365,14 @@ static int MINTAUD_OpenAudio(_THIS, SDL_AudioSpec *spec)
 
 	/* Even if this is recalculated, the interrupt handler may use it immediatelly */
 	this->spec.size = this->hidden->mixlen;
-	audiop = this;
+	SDL_MintAudio_audiop = this;
+	SDL_MintAudio_stack  = this->hidden->stack + this->hidden->stacksize;
 
 	if (Setinterrupt(SI_TIMERA, SI_PLAY) != 0)
 		return(-1);
 
-	Xbtimer(XB_TIMERA, 1<<3, 1, RunAudioWrapper);	/* event count mode, count to '1' */
-	Supexec(EnableSei);
+	/* Assume software end-of-interrupt mode */
+	Xbtimer(XB_TIMERA, 1<<3, 1, SDL_MintAudio_TimerA);	/* event count mode, count to '1' */
 	Jenabint(MFP_TIMERA);
 
 	/* Start playback */
