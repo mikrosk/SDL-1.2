@@ -124,49 +124,56 @@ run_audio_wrapper_nofpu2:
 	rte
 
 SYM(SDL_MintAudio_TimerA):
+	tst.w	runaudio_ctx_locked
+	bne.s	SDL_MintAudio_TimerA_done
+
 	move.l	d0,-(sp)				| this is the +8 below
 	move.l	a0,-(sp)				|
 
 	lea	(runaudio_ctx,pc),a0
-	move.w	(a0,CXT_LOCKED),d0
-	bne.s	SDL_MintAudio_TimerA_done
 
 	moveq	#1,d0
 	move.w	d0,(a0,CXT_LOCKED)
 
 	// TODO: check for emulation
 	move.w	(sp,SR_OFF+8),d0
+	ori.l	#0x2000,d0				| Supervisor = 1
 	move.w	d0,(a0,CXT_SR)
-	|ori.l	#0x2000,d0				| Supervisor = 1
-	move	sr,d0
-	move.w	d0,(sp,SR_OFF+8)
 
-	move.l	(sp,PC_OFF+8),d0
+	move.l	#just_rte,d0
 	move.l	d0,(a0,CXT_PC)
-	lea	(just_rte,pc),a0
-	move.l	a0,(sp,PC_OFF+8)
+
+	move.l	(sp)+,a0
+	move.l	(sp)+,d0
+
+#ifndef __mcoldfire__
+	clr.w	-(sp)
+	move.l	runaudio_ctx_pc,-(sp)
+	move.w	runaudio_ctx_sr,-(sp)
+#else
+	// TODO
+	nop
+#endif
 
 SDL_MintAudio_TimerA_done:
 	/* Clear in service bit ... the TOS way */
 #ifndef __mcoldfire__
 	move.b	#0b11011111,0xfffffa0f:w
 #else
+	move.b	d0,-(sp)
 	move.b	#0b11011111,d0
 	move.b	d0,0xfffffa0f:w
+	move.b	(sp)+,d0
 #endif
-	move.l	(sp)+,a0
-	move.l	(sp)+,d0
+	/* Jump into run_audio_wrapper with interrupts on */
 	rte
 
 just_rte:
-	clr.w	-(sp)
-	move.l	runaudio_ctx_pc,-(sp)
-	move.w	runaudio_ctx_sr,-(sp)
-
 	ori.w	#0x0600,sr
 	bclr	#5,0xfffffa0b:w
 
 	clr.w	runaudio_ctx_locked
+	/* Return to the caller of SDL_MintAudio_TimerA */
 	rte
 
 runaudio_ctx:
