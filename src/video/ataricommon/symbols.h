@@ -85,6 +85,7 @@
 #define sp REG(sp)
 #define pc REG(pc)
 #define sr REG(sr)
+#define usp REG(usp)
 
 #define fp0 REG(fp0)
 #define fp1 REG(fp1)

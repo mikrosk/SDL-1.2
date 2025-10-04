@@ -51,11 +51,10 @@
 
 run_audio_wrapper:
 	/* Executed in Supervisor to prevent task preemption */
-	move.l	sp,old_ssp
-
 	lea	(sp,-6*4),sp
 	movem.l	d0-d2/a0-a2,(sp)
 
+	move.l	sp,old_ssp
 	move.l	SYM(SDL_MintAudio_stack),sp
 
 	/* Save FPU if needed */
@@ -76,7 +75,7 @@ run_audio_wrapper_nofpu1:
 	/* SDL_RunAudio(audiop); */
 	lea	SYM(SDL_MintAudio_RunAudio),a0
 	move.l	SYM(SDL_MintAudio_audiop),-(sp)
-	jsr	(a0)
+	|jsr	(a0)
 	addq.l	#4,sp
 
 	/* Restore FPU if needed */
@@ -96,17 +95,6 @@ run_audio_wrapper_nofpu2:
 
 	move.l	old_ssp,sp
 
-	lea	(runaudio_ctx,pc),a0
-#ifndef __mcoldfire__
-	// TODO: m68000 test for _longframe
-	clr.w	(sp,VEC_OFF+6*4)
-#else
-	// TODO: check for emulation
-	move.w	#0x4000,(sp,VEC_OFF+6*4)
-#endif
-	move.l	(a0,CXT_PC),(sp,PC_OFF+6*4)
-	move.w	(a0,CXT_SR),(sp,SR_OFF+6*4)
-
 	move.w	sr,d0					| make sure that Timer B
 	ori.l	#0x0600,d0				| isn't fired NOW
 	move.w	d0,sr					|
@@ -117,10 +105,11 @@ run_audio_wrapper_nofpu2:
 	moveq	#5,d0
 	bclr	d0,0xfffffa0b:w
 
-	clr.w	(a0,CXT_LOCKED)
+	clr.w	runaudio_ctx_locked
 
 	movem.l	(sp),d0-d2/a0-a2
 	lea	(sp,+6*4),sp
+	/* Return to the caller of SDL_MintAudio_TimerA */
 	rte
 
 SYM(SDL_MintAudio_TimerA):
@@ -140,19 +129,21 @@ SYM(SDL_MintAudio_TimerA):
 	ori.l	#0x2000,d0				| Supervisor = 1
 	move.w	d0,(a0,CXT_SR)
 
-	move.l	#just_rte,d0
+	move.l	#run_audio_wrapper,d0
 	move.l	d0,(a0,CXT_PC)
 
 	move.l	(sp)+,a0
 	move.l	(sp)+,d0
 
 #ifndef __mcoldfire__
+	// TODO: m68000 test for _longframe
 	clr.w	-(sp)
 	move.l	runaudio_ctx_pc,-(sp)
 	move.w	runaudio_ctx_sr,-(sp)
 #else
-	// TODO
-	nop
+	move.l	runaudio_ctx_pc,-(sp)
+	move.w	runaudio_ctx_sr,-(sp)
+	move.w	#0x4000,-(sp)
 #endif
 
 SDL_MintAudio_TimerA_done:
@@ -166,14 +157,6 @@ SDL_MintAudio_TimerA_done:
 	move.b	(sp)+,d0
 #endif
 	/* Jump into run_audio_wrapper with interrupts on */
-	rte
-
-just_rte:
-	ori.w	#0x0600,sr
-	bclr	#5,0xfffffa0b:w
-
-	clr.w	runaudio_ctx_locked
-	/* Return to the caller of SDL_MintAudio_TimerA */
 	rte
 
 runaudio_ctx:
