@@ -137,12 +137,13 @@ SYM(SDL_MintAudio_TimerA):
 	// TODO: check for emulation
 	move.w	(sp,SR_OFF+8),d0
 	move.w	d0,(a0,CXT_SR)
-	ori.l	#0x2000,d0				| Supervisor = 1
+	|ori.l	#0x2000,d0				| Supervisor = 1
+	move	sr,d0
 	move.w	d0,(sp,SR_OFF+8)
 
 	move.l	(sp,PC_OFF+8),d0
 	move.l	d0,(a0,CXT_PC)
-	lea	(run_audio_wrapper,pc),a0
+	lea	(just_rte,pc),a0
 	move.l	a0,(sp,PC_OFF+8)
 
 SDL_MintAudio_TimerA_done:
@@ -155,6 +156,17 @@ SDL_MintAudio_TimerA_done:
 #endif
 	move.l	(sp)+,a0
 	move.l	(sp)+,d0
+	rte
+
+just_rte:
+	clr.w	-(sp)
+	move.l	runaudio_ctx_pc,-(sp)
+	move.w	runaudio_ctx_sr,-(sp)
+
+	ori.w	#0x0600,sr
+	bclr	#5,0xfffffa0b:w
+
+	clr.w	runaudio_ctx_locked
 	rte
 
 runaudio_ctx:
