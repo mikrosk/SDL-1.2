@@ -75,7 +75,7 @@ run_audio_wrapper_nofpu1:
 	/* SDL_RunAudio(audiop); */
 	lea	SYM(SDL_MintAudio_RunAudio),a0
 	move.l	SYM(SDL_MintAudio_audiop),-(sp)
-	|jsr	(a0)
+	jsr	(a0)
 	addq.l	#4,sp
 
 	/* Restore FPU if needed */

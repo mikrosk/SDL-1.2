@@ -205,15 +205,34 @@ static void MINTAUD_WaitAudio(_THIS)
 	/* Nothing to do here */
 }
 
+static void SetPlayBuffer(Uint8 *start, Uint8 *end)
+{
+	const Uint32 startl = (Uint32)start;
+	const Uint32 endl   = (Uint32)end;
+
+	/* select replay registers */
+	*(volatile Uint8 *)0xFF8901 &= ~(1 << 7);
+
+	*(volatile Uint8 *)0xFF8903 = startl >> 16;
+	*(volatile Uint8 *)0xFF8905 = startl >> 8;
+	*(volatile Uint8 *)0xFF8907 = startl;
+
+	*(volatile Uint8 *)0xFF890F = endl >> 16;
+	*(volatile Uint8 *)0xFF8911 = endl >> 8;
+	*(volatile Uint8 *)0xFF8913 = endl;
+}
+
 static void MINTAUD_PlayAudio(_THIS)
 {
 	if (this->hidden->playing == SDL_ATARI_PHYSBUF) {
 		SDL_memcpy(this->hidden->logbuf, this->hidden->mixbuf, this->hidden->mixlen);
-		Setbuffer(SR_PLAY, this->hidden->logbuf, this->hidden->logbuf + this->hidden->mixlen);
+		//Setbuffer(SR_PLAY, this->hidden->logbuf, this->hidden->logbuf + this->hidden->mixlen);
+		SetPlayBuffer(this->hidden->logbuf, this->hidden->logbuf + this->hidden->mixlen);
 		this->hidden->playing = SDL_ATARI_LOGBUF;
 	} else if (this->hidden->playing == SDL_ATARI_LOGBUF) {
 		SDL_memcpy(this->hidden->physbuf, this->hidden->mixbuf, this->hidden->mixlen);
-		Setbuffer(SR_PLAY, this->hidden->physbuf, this->hidden->physbuf + this->hidden->mixlen);
+		//Setbuffer(SR_PLAY, this->hidden->physbuf, this->hidden->physbuf + this->hidden->mixlen);
+		SetPlayBuffer(this->hidden->physbuf, this->hidden->physbuf + this->hidden->mixlen);
 		this->hidden->playing = SDL_ATARI_PHYSBUF;
 	}
 }
