@@ -49,114 +49,22 @@
 
 	.text
 
-run_audio_wrapper:
-	/* Executed in Supervisor to prevent task preemption */
+ptr:	ds.l	4
+
+SYM(SDL_MintAudio_TimerA):
 	lea	(sp,-6*4),sp
 	movem.l	d0-d2/a0-a2,(sp)
 
-	move.l	sp,old_ssp
-	move.l	SYM(SDL_MintAudio_stack),sp
-
-	/* Save FPU if needed */
-	tst.w	SYM(SDL_MintAudio_hasfpu)
-	beq.s	run_audio_wrapper_nofpu1
-#ifndef __mcoldfire__
-	.chip	68060
-	fsave	-(sp)
-	fmovem.l fpcr/fpsr/fpiar,-(sp)
-	fmovem.x fp0-fp1,-(sp)
-	.chip	68000
-#else
-	// TODO
-	nop
-#endif
-run_audio_wrapper_nofpu1:
-
-	/* SDL_RunAudio(audiop); */
-	lea	SYM(SDL_MintAudio_RunAudio),a0
-	move.l	SYM(SDL_MintAudio_audiop),-(sp)
-	jsr	(a0)
-	addq.l	#4,sp
-
-	/* Restore FPU if needed */
-	tst.w	SYM(SDL_MintAudio_hasfpu)
-	beq.s	run_audio_wrapper_nofpu2
-#ifndef __mcoldfire__
-	.chip	68060
-	fmovem.x (sp)+,fp0-fp1
-	fmovem.l (sp)+,fpcr/fpsr/fpiar
-	frestore (sp)+
-	.chip	68000
-#else
-	// TODO
-	nop
-#endif
-run_audio_wrapper_nofpu2:
-
-	move.l	old_ssp,sp
-
-	move.w	sr,d0					| make sure that Timer B
-	ori.l	#0x0600,d0				| isn't fired NOW
-	move.w	d0,sr					|
-
-	/* Clear pending bit; if the callback is too CPU heavy, we don't want
-	 * to flood the system with endless pending Timer B interrupts...
-	 */
-	moveq	#5,d0
-	bclr	d0,0xfffffa0b:w
-
-	clr.w	runaudio_ctx_locked
+	pea       ptr          | Offset 2
+	move.w    #141,-(sp)   | Offset 0
+	trap      #14          | Call XBIOS
+	addq.l    #6,sp        | Correct stack
 
 	movem.l	(sp),d0-d2/a0-a2
 	lea	(sp,+6*4),sp
-	/* Return to the caller of SDL_MintAudio_TimerA */
-	rte
 
-SYM(SDL_MintAudio_TimerA):
-	tst.w	runaudio_ctx_locked
-	bne.s	SDL_MintAudio_TimerA_done
-
-	move.l	d0,-(sp)				| this is the +8 below
-	move.l	a0,-(sp)				|
-
-	lea	(runaudio_ctx,pc),a0
-
-	moveq	#1,d0
-	move.w	d0,(a0,CXT_LOCKED)
-
-	// TODO: check for emulation
-	move.w	(sp,SR_OFF+8),d0
-	ori.l	#0x2000,d0				| Supervisor = 1
-	move.w	d0,(a0,CXT_SR)
-
-	move.l	#run_audio_wrapper,d0
-	move.l	d0,(a0,CXT_PC)
-
-	move.l	(sp)+,a0
-	move.l	(sp)+,d0
-
-#ifndef __mcoldfire__
-	// TODO: m68000 test for _longframe
-	clr.w	-(sp)
-	move.l	runaudio_ctx_pc,-(sp)
-	move.w	runaudio_ctx_sr,-(sp)
-#else
-	move.l	runaudio_ctx_pc,-(sp)
-	move.w	runaudio_ctx_sr,-(sp)
-	move.w	#0x4000,-(sp)
-#endif
-
-SDL_MintAudio_TimerA_done:
-	/* Clear in service bit ... the TOS way */
-#ifndef __mcoldfire__
+	bclr	#5,0xfffffa0b:w
 	move.b	#0b11011111,0xfffffa0f:w
-#else
-	move.b	d0,-(sp)
-	move.b	#0b11011111,d0
-	move.b	d0,0xfffffa0f:w
-	move.b	(sp)+,d0
-#endif
-	/* Jump into run_audio_wrapper with interrupts on */
 	rte
 
 runaudio_ctx:
@@ -175,3 +83,7 @@ SYM(SDL_MintAudio_stack):
 	.ds.l	1
 old_ssp:
 	.ds.l	1
+
+whatever:
+	ds.l	256*1024
+whatever_end:
