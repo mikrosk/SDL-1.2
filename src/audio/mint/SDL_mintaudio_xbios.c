@@ -34,6 +34,10 @@
 
 #include <usound.h>
 
+#if !defined(USOUND_VERSION) || USOUND_VERSION < 2
+#error "uSound 2 or newer is required, update usound.h from https://github.com/mikrosk/usound"
+#endif
+
 #include "SDL_audio.h"
 #include "../SDL_audio_c.h"
 #include "../SDL_sysaudio.h"
@@ -63,31 +67,36 @@ static void Mint_LockAudio(_THIS);
 static void Mint_UnlockAudio(_THIS);
 static void Mint_SwapBuffers(Uint8 *nextbuf, int nextsize);
 
-/*--- Format conversion helpers (SDL <-> AtariSoundSetup) ---*/
+/*--- Variables ---*/
 
-static int Mint_FormatToAtari(Uint16 sdl_format, AudioFormat *atari_format)
+/* uSound state, shared between Mint_OpenAudio() and Mint_CloseAudio() */
+static USoundContext usound_context;
+
+/*--- Format conversion helpers (SDL <-> uSound) ---*/
+
+static int Mint_FormatToUSound(Uint16 sdl_format, USoundFormat *usound_format)
 {
 	switch (sdl_format) {
-		case AUDIO_U8:     *atari_format = AudioFormatUnsigned8;     break;
-		case AUDIO_S8:     *atari_format = AudioFormatSigned8;       break;
-		case AUDIO_U16LSB: *atari_format = AudioFormatUnsigned16LSB; break;
-		case AUDIO_S16LSB: *atari_format = AudioFormatSigned16LSB;   break;
-		case AUDIO_U16MSB: *atari_format = AudioFormatUnsigned16MSB; break;
-		case AUDIO_S16MSB: *atari_format = AudioFormatSigned16MSB;   break;
+		case AUDIO_U8:     *usound_format = USoundFormatUnsigned8;     break;
+		case AUDIO_S8:     *usound_format = USoundFormatSigned8;       break;
+		case AUDIO_U16LSB: *usound_format = USoundFormatUnsigned16LSB; break;
+		case AUDIO_S16LSB: *usound_format = USoundFormatSigned16LSB;   break;
+		case AUDIO_U16MSB: *usound_format = USoundFormatUnsigned16MSB; break;
+		case AUDIO_S16MSB: *usound_format = USoundFormatSigned16MSB;   break;
 		default: return 0;
 	}
 	return 1;
 }
 
-static int Mint_FormatFromAtari(AudioFormat atari_format, Uint16 *sdl_format)
+static int Mint_FormatFromUSound(USoundFormat usound_format, Uint16 *sdl_format)
 {
-	switch (atari_format) {
-		case AudioFormatUnsigned8:     *sdl_format = AUDIO_U8;     break;
-		case AudioFormatSigned8:       *sdl_format = AUDIO_S8;     break;
-		case AudioFormatUnsigned16LSB: *sdl_format = AUDIO_U16LSB; break;
-		case AudioFormatSigned16LSB:   *sdl_format = AUDIO_S16LSB; break;
-		case AudioFormatUnsigned16MSB: *sdl_format = AUDIO_U16MSB; break;
-		case AudioFormatSigned16MSB:   *sdl_format = AUDIO_S16MSB; break;
+	switch (usound_format) {
+		case USoundFormatUnsigned8:     *sdl_format = AUDIO_U8;     break;
+		case USoundFormatSigned8:       *sdl_format = AUDIO_S8;     break;
+		case USoundFormatUnsigned16LSB: *sdl_format = AUDIO_U16LSB; break;
+		case USoundFormatSigned16LSB:   *sdl_format = AUDIO_S16LSB; break;
+		case USoundFormatUnsigned16MSB: *sdl_format = AUDIO_U16MSB; break;
+		case USoundFormatSigned16MSB:   *sdl_format = AUDIO_S16MSB; break;
 		default: return 0;
 	}
 	return 1;
@@ -176,7 +185,7 @@ static void Mint_CloseAudio(_THIS)
 	Jdisint(MFP_DMASOUND);
 
 	/* Restore and unlock the sound system */
-	AtariSoundSetupDeinitXbios();
+	USoundDeinitXbios(&usound_context);
 
 	SDL_MintAudio_FreeBuffers();
 
@@ -186,7 +195,7 @@ static void Mint_CloseAudio(_THIS)
 
 static int Mint_OpenAudio(_THIS, SDL_AudioSpec *spec)
 {
-	AudioSpec desired, obtained;
+	USoundSpec desired, obtained;
 
 	DEBUG_PRINT((DEBUG_NAME "asked: %d bits, ",spec->format & 0x00ff));
 	DEBUG_PRINT(("signed=%d, ", ((spec->format & 0x8000)!=0)));
@@ -194,7 +203,7 @@ static int Mint_OpenAudio(_THIS, SDL_AudioSpec *spec)
 	DEBUG_PRINT(("channels=%d, ", spec->channels));
 	DEBUG_PRINT(("freq=%d\n", spec->freq));
 
-	if (!Mint_FormatToAtari(spec->format, &desired.format)) {
+	if (!Mint_FormatToUSound(spec->format, &desired.format)) {
 		SDL_SetError("Mint_OpenAudio: Unsupported audio format");
 		return(-1);
 	}
@@ -205,14 +214,14 @@ static int Mint_OpenAudio(_THIS, SDL_AudioSpec *spec)
 	/* Lock, select format/frequency and set up the connection matrix.
 	   This goes through the standard XBIOS Devconnect(), so it works on
 	   real hardware (Falcon, FireBee, ...) instead of poking registers. */
-	if (!AtariSoundSetupInitXbios(&desired, &obtained)) {
-		SDL_SetError("Mint_OpenAudio: AtariSoundSetupInitXbios() failed");
+	if (!USoundInitXbios(&desired, &obtained, &usound_context)) {
+		SDL_SetError("Mint_OpenAudio: USoundInitXbios() failed");
 		return(-1);
 	}
 
-	if (!Mint_FormatFromAtari(obtained.format, &spec->format)) {
+	if (!Mint_FormatFromUSound(obtained.format, &spec->format)) {
 		SDL_SetError("Mint_OpenAudio: Unsupported audio format");
-		AtariSoundSetupDeinitXbios();
+		USoundDeinitXbios(&usound_context);
 		return(-1);
 	}
 	spec->freq     = obtained.frequency;
@@ -228,7 +237,7 @@ static int Mint_OpenAudio(_THIS, SDL_AudioSpec *spec)
 
 	/* Allocate DMA buffers (also computes spec->size) */
 	if (!SDL_MintAudio_InitBuffers(spec)) {
-		AtariSoundSetupDeinitXbios();
+		USoundDeinitXbios(&usound_context);
 		return(-1);
 	}
 
