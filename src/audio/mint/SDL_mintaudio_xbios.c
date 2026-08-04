@@ -48,6 +48,13 @@
 
 #define MINT_AUDIO_DRIVER_NAME "xbios"
 
+/* GSXB extends Setinterrupt() with a third parameter, the address of a
+   routine to be called at the end of a frame. It is the only mode GSXB
+   supports: the Falcon's Timer A and MFP i7 end of frame interrupts are
+   rejected with EBADR because they simply do not exist on some of the
+   machines GSXB drives (the Hades, for instance). */
+#define SI_GSXB	2	/* Install user End-Of-Frame interrupt function */
+
 /* Debug print info */
 #define DEBUG_NAME "audio:xbios: "
 #if 0
@@ -67,10 +74,22 @@ static void Mint_LockAudio(_THIS);
 static void Mint_UnlockAudio(_THIS);
 static void Mint_SwapBuffers(Uint8 *nextbuf, int nextsize);
 
+#if !defined(__mcoldfire__)
+/* GSXB callback */
+static void Mint_GsxbNullInterrupt(void);
+#endif
+
 /*--- Variables ---*/
 
 /* uSound state, shared between Mint_OpenAudio() and Mint_CloseAudio() */
 static USoundContext usound_context;
+
+/* Do we use GSXB's own end of frame callback instead of Timer A ? */
+#if defined(__mcoldfire__)
+#define use_gsxb 0	/* no ColdFire machine implements GSXB */
+#else
+static int use_gsxb;
+#endif
 
 /*--- Format conversion helpers (SDL <-> uSound) ---*/
 
@@ -101,6 +120,34 @@ static int Mint_FormatFromUSound(USoundFormat usound_format, Uint16 *sdl_format)
 	}
 	return 1;
 }
+
+/*--- GSXB ---*/
+
+#if !defined(__mcoldfire__)
+
+/* SI_GSXB is documented as available when bits 2 and 5 of the _SND cookie
+   are set *and* the GSXB cookie is present. Both halves matter: GSXB sets
+   those bits only once a sound card driver has installed itself under it,
+   and MilanBlaster/MagicMac set bit 5 as well but do not necessarily
+   implement the extended call. */
+static int Mint_GsxbAvailable(void)
+{
+	long cookie;
+
+	if (Getcookie(C_GSXB, &cookie) != C_FOUND) {
+		return(0);
+	}
+	if (Getcookie(C__SND, &cookie) != C_FOUND) {
+		return(0);
+	}
+	return((cookie & (SND_16BIT|SND_EXT)) == (SND_16BIT|SND_EXT));
+}
+
+static void Mint_GsxbNullInterrupt(void)
+{
+}
+
+#endif /* !__mcoldfire__ */
 
 /*--- Audio driver bootstrap functions ---*/
 
@@ -182,7 +229,14 @@ static void Mint_CloseAudio(_THIS)
 	Buffoper(0);
 
 	/* Uninstall interrupt */
-	Jdisint(MFP_DMASOUND);
+#if !defined(__mcoldfire__)
+	if (use_gsxb) {
+		NSetinterrupt(SI_GSXB, SI_NONE, Mint_GsxbNullInterrupt);
+	}
+#endif
+	if (!use_gsxb) {
+		Jdisint(MFP_DMASOUND);
+	}
 
 	/* Restore and unlock the sound system */
 	USoundDeinitXbios(&usound_context);
@@ -246,12 +300,26 @@ static int Mint_OpenAudio(_THIS, SDL_AudioSpec *spec)
 	Mint_SwapBuffers(MINTAUDIO_audiobuf[0], MINTAUDIO_audiosize);
 
 	/* Install interrupt */
-	Jdisint(MFP_DMASOUND);
-	Xbtimer(XB_TIMERA, 8, 1, SDL_MintAudio_XbiosInterrupt);
-	Jenabint(MFP_DMASOUND);
+#if !defined(__mcoldfire__)
+	use_gsxb = Mint_GsxbAvailable();
+	if (use_gsxb) {
+		if (NSetinterrupt(SI_GSXB, SI_PLAY, SDL_MintAudio_GsxbInterrupt)<0) {
+			SDL_SetError("Mint_OpenAudio: GSXB refused the end of frame interrupt");
+			SDL_MintAudio_FreeBuffers();
+			USoundDeinitXbios(&usound_context);
+			SDL_MintAudio_device = NULL;
+			return(-1);
+		}
+	}
+#endif
+	if (!use_gsxb) {
+		Jdisint(MFP_DMASOUND);
+		Xbtimer(XB_TIMERA, 8, 1, SDL_MintAudio_XbiosInterrupt);
+		Jenabint(MFP_DMASOUND);
 
-	if (Setinterrupt(SI_TIMERA, SI_PLAY)<0) {
-		DEBUG_PRINT((DEBUG_NAME "Setinterrupt() failed\n"));
+		if (Setinterrupt(SI_TIMERA, SI_PLAY)<0) {
+			DEBUG_PRINT((DEBUG_NAME "Setinterrupt() failed\n"));
+		}
 	}
 
 	/* Go */

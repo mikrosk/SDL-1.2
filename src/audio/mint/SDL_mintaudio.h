@@ -116,5 +116,8 @@ extern volatile unsigned long SDL_MintAudio_itsilence;
 /* Functions */
 void SDL_MintAudio_XbiosInterrupt(void);
 void SDL_MintAudio_Dma8Interrupt(void);
+#if !defined(__mcoldfire__)
+void SDL_MintAudio_GsxbInterrupt(void);
+#endif
 
 #endif /* _SDL_mintaudio_h */

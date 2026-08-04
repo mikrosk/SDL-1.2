@@ -32,6 +32,9 @@
 
 	.globl	SYM(SDL_MintAudio_XbiosInterrupt)
 	.globl	SYM(SDL_MintAudio_Dma8Interrupt)
+#if !defined(__mcoldfire__)
+	.globl	SYM(SDL_MintAudio_GsxbInterrupt)
+#endif
 
 	.globl	SYM(SDL_MintAudio_num_its)
 
@@ -59,10 +62,36 @@ SYM(SDL_MintAudio_Dma8Interrupt):
 	bclr	#5,0xfffffa0f:w
 #endif
 
+	bsr.s	countinterrupt
+
+#if defined(__mcoldfire__)
+	moveml	sp@,d0-d1/a0
+	lea	sp@(12),sp
+#else
+	moveml	sp@+,d0-d1/a0
+#endif
+	rte
+
+/*    GSXB: not an exception handler. NSetinterrupt() hands this address to
+      the sound card driver, which calls it as a subroutine in supervisor
+      mode on every end of frame, with flags in d0. It must end with rts and
+      no MFP is involved at all. No ColdFire machine implements GSXB. */
+
+#if !defined(__mcoldfire__)
+SYM(SDL_MintAudio_GsxbInterrupt):
+	moveml	d0-d1/a0,sp@-
+
+	bsr.s	countinterrupt
+
+	moveml	sp@+,d0-d1/a0
+	rts
+#endif
+
+countinterrupt:
 	move.l	SYM(SDL_MintAudio_num_its),d0
 	addql	#1,d0
 	move.l	d0,SYM(SDL_MintAudio_num_its)
- 
+
 	cmp.l	#5,d0
 	bmi.s	nosilence
 
@@ -78,13 +107,7 @@ fillsilence:
 	bpl.s	fillsilence
 
 nosilence:
-#if defined(__mcoldfire__)
-	moveml	sp@,d0-d1/a0
-	lea	sp@(12),sp
-#else
-	moveml	sp@+,d0-d1/a0
-#endif
-	rte
+	rts
 
 	.bss
 
