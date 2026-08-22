@@ -66,15 +66,20 @@ SYM(SDL_AtariXbios_Install):
 #endif
 	movel	d0,a0
 
-	/* Test kbstate */
 processing_ikbd_packet_install:
-	tst.b	a0@(36)
-	bnes	processing_ikbd_packet_install
 
 	/* Stop interrupts */
 
 	movew	sr,d1
 	movew	#0x2700,sr
+
+	/* Test kbstate */
+
+	tstb	a0@(36)
+	beqs	no_ikbd_packet_install
+	movew	d1,sr
+	bras	processing_ikbd_packet_install
+no_ikbd_packet_install:
 
 	/* Save old mouse vector, set our routine */
 
@@ -148,15 +153,19 @@ SYM(SDL_AtariXbios_Restore):
 #endif
 	movel	d0,a0
 
-	/* Test kbstate */
 processing_ikbd_packet_restore:
-	tst.b	a0@(36)
-	bnes	processing_ikbd_packet_restore
-
 	/* Stop interrupts */
 
 	movew	sr,d1
 	movew	#0x2700,sr
+
+	/* Test kbstate */
+
+	tstb	a0@(36)
+	beqs	no_ikbd_packet_restore
+	movew	d1,sr
+	bras	processing_ikbd_packet_restore
+no_ikbd_packet_restore:
 
 	/* Restore mouse vector */
 
