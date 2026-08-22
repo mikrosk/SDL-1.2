@@ -46,10 +46,39 @@
 /*--- Install our IKBD vector ---*/
 
 SYM(SDL_AtariIkbd_Install):
-	| Disable interrupts
+	| KBDVBASE *Kbdvbase(void);
+
+#if defined(__mcoldfire__)
+	lea	sp@(-8),sp
+	moveml	d2/a2,sp@
+#else
+	moveml	d2/a2,sp@-
+#endif
+	movew	#34,sp@-
+	trap	#14
+	addql	#2,sp
+#if defined(__mcoldfire__)
+	moveml	sp@,d2/a2
+	lea	sp@(8),sp
+#else
+	moveml	sp@+,d2/a2
+#endif
+	movel	d0,a1
+
+processing_ikbd_packet_install:
+
+	| Stop interrupts
 
 	movew	sr,d1
 	movew	#0x2700,sr
+
+	| Test kbstate
+
+	tstb	a1@(36)
+	beqs	no_ikbd_packet_install
+	movew	d1,sr
+	bras	processing_ikbd_packet_install
+no_ikbd_packet_install:
 
 	| Save MFP registers used for keyboard
 
@@ -137,6 +166,13 @@ ikbd_restoreierb:
 	beqs	ikbd_restoreimrb
 	bset	#6,a0@(0x15)
 ikbd_restoreimrb:
+
+#if defined(__mcoldfire__)
+	movel	#ikbd,d0
+	movel	d0,0x118:w
+#else
+	movel	#ikbd,0x118:w
+#endif
 
 	movew	d1,sp@-
 
