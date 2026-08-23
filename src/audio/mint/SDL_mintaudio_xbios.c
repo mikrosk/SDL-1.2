@@ -70,8 +70,6 @@
 
 static void Mint_CloseAudio(_THIS);
 static int Mint_OpenAudio(_THIS, SDL_AudioSpec *spec);
-static void Mint_LockAudio(_THIS);
-static void Mint_UnlockAudio(_THIS);
 static void Mint_SwapBuffers(Uint8 *nextbuf, int nextsize);
 
 #if !defined(__mcoldfire__)
@@ -199,8 +197,6 @@ static SDL_AudioDevice *Audio_CreateDevice(int devindex)
     /* Set the function pointers */
     this->OpenAudio   = Mint_OpenAudio;
     this->CloseAudio  = Mint_CloseAudio;
-    this->LockAudio   = Mint_LockAudio;
-    this->UnlockAudio = Mint_UnlockAudio;
     this->free        = Audio_DeleteDevice;
 
     return this;
@@ -210,18 +206,6 @@ AudioBootStrap MINTAUDIO_XBIOS_bootstrap = {
 	MINT_AUDIO_DRIVER_NAME, "MiNT XBIOS audio driver",
 	Audio_Available, Audio_CreateDevice
 };
-
-static void Mint_LockAudio(_THIS)
-{
-	/* Stop replay */
-	Buffoper(0);
-}
-
-static void Mint_UnlockAudio(_THIS)
-{
-	/* Restart replay */
-	Buffoper(SB_PLA_ENA|SB_PLA_RPT);
-}
 
 static void Mint_CloseAudio(_THIS)
 {

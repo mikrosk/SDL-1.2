@@ -65,8 +65,6 @@ static long cookie_snd, cookie_mch;
 
 static void Mint_CloseAudio(_THIS);
 static int Mint_OpenAudio(_THIS, SDL_AudioSpec *spec);
-static void Mint_LockAudio(_THIS);
-static void Mint_UnlockAudio(_THIS);
 
 /* To check/init hardware audio */
 static int Mint_CheckAudio(_THIS, SDL_AudioSpec *spec);
@@ -149,8 +147,6 @@ static SDL_AudioDevice *Audio_CreateDevice(int devindex)
     /* Set the function pointers */
     this->OpenAudio   = Mint_OpenAudio;
     this->CloseAudio  = Mint_CloseAudio;
-    this->LockAudio   = Mint_LockAudio;
-    this->UnlockAudio = Mint_UnlockAudio;
     this->free        = Audio_DeleteDevice;
 
     return this;
@@ -160,16 +156,6 @@ AudioBootStrap MINTAUDIO_DMA8_bootstrap = {
 	MINT_AUDIO_DRIVER_NAME, "MiNT DMA 8 bits audio driver",
 	Audio_Available, Audio_CreateDevice
 };
-
-static void Mint_LockAudio(_THIS)
-{
-	Supexec(Mint_StopReplay);
-}
-
-static void Mint_UnlockAudio(_THIS)
-{
-	Supexec(Mint_StartReplay);
-}
 
 static void Mint_CloseAudio(_THIS)
 {
