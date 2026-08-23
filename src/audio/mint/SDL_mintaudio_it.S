@@ -95,16 +95,18 @@ countinterrupt:
 	cmp.l	#5,d0
 	bmi.s	nosilence
 
-	move.l	SYM(SDL_MintAudio_itbuffer),d1
-	beq.s	nosilence
-	move.l	d1,a0
-
 	move.l	SYM(SDL_MintAudio_itbuflen),d0
+	beq.s	nosilence
+	subq.l	#1,d0
+
+	move.l	SYM(SDL_MintAudio_itbuffer),a0
 	move.l	SYM(SDL_MintAudio_itsilence),d1
 fillsilence:
 	move.l	d1,a0@+
 	subq.l	#1,d0
 	bpl.s	fillsilence
+
+	clr.l	SYM(SDL_MintAudio_itbuflen)
 
 nosilence:
 	rts

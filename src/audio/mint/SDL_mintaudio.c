@@ -95,8 +95,8 @@ int SDL_MintAudio_InitBuffers(SDL_AudioSpec *spec)
 	SDL_MintAudio_max_buf = MAX_DMA_BUF;
 
 	/* For filling silence when too many interrupts per update */
-	SDL_MintAudio_itbuffer = MINTAUDIO_audiobuf[0];
-	SDL_MintAudio_itbuflen = (dmabuflen >> 2)-1;
+	SDL_MintAudio_itbuffer = NULL;
+	SDL_MintAudio_itbuflen = 0;
 	SDL_MintAudio_itsilence = (spec->silence << 24)|(spec->silence << 16)|
 		(spec->silence << 8)|spec->silence;
 
@@ -114,6 +114,7 @@ void SDL_MintAudio_FreeBuffers(void)
 		MINTAUDIO_fastrambuf = NULL;
 	}
 	if (MINTAUDIO_audiobuf[0]) {
+		SDL_MintAudio_itbuflen = 0;
 		Mfree(MINTAUDIO_audiobuf[0]);
 		SDL_MintAudio_itbuffer = MINTAUDIO_audiobuf[0] = MINTAUDIO_audiobuf[1] = NULL;
 	}
@@ -136,6 +137,8 @@ void SDL_AtariMint_UpdateAudio(void)
 	if (SDL_MintAudio_num_its==0) {
 		return;
 	}
+
+	SDL_MintAudio_itbuflen = 0;
 
 	if (SDL_MintAudio_num_upd < (SDL_MintAudio_num_its<<2)) {
 		/* Too many interrupts per update, increase latency */
@@ -160,6 +163,9 @@ void SDL_AtariMint_UpdateAudio(void)
 
 	/* And swap to it */
 	(*MINTAUDIO_swapbuf)(MINTAUDIO_audiobuf[SDL_MintAudio_numbuf], MINTAUDIO_audiosize);
+
+	SDL_MintAudio_itbuffer = MINTAUDIO_audiobuf[SDL_MintAudio_numbuf];
+	SDL_MintAudio_itbuflen = MINTAUDIO_audiosize >> 2;
 }
 
 /* The callback function, called by each driver whenever needed */
