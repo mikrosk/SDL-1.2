@@ -104,6 +104,8 @@ void AtariXbios_InitOSKeymap(_THIS)
 
 void AtariXbios_PumpEvents(_THIS)
 {
+	SDL_AtariMint_BackgroundTasks();
+
 	SDL_AtariXbios_PostKeyboardEvents(this);
 	SDL_AtariXbios_PostMouseEvents(this, SDL_TRUE);
 }
