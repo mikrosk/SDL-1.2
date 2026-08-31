@@ -41,17 +41,13 @@ static const xbiosmode_t ttmodes[]={
 };
 
 static void listModes(_THIS, int actually_add);
-static void saveMode(_THIS, SDL_PixelFormat *vformat);
 static void setMode(_THIS, const xbiosmode_t *new_video_mode);
-static void restoreMode(_THIS);
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors);
 
 void SDL_XBIOS_VideoInit_TT(_THIS)
 {
 	XBIOS_listModes = listModes;
-	XBIOS_saveMode = saveMode;
 	XBIOS_setMode = setMode;
-	XBIOS_restoreMode = restoreMode;
 
 	this->SetColors = setColors;
 }
@@ -65,20 +61,9 @@ static void listModes(_THIS, int actually_add)
 	}
 }
 
-static void saveMode(_THIS, SDL_PixelFormat *vformat)
-{
-	XBIOS_oldvbase=Physbase();
-	XBIOS_oldvmode=Getrez();
-}
-
 static void setMode(_THIS, const xbiosmode_t *new_video_mode)
 {
 	Setscreen(-1,XBIOS_screens[0],new_video_mode->number);
-}
-
-static void restoreMode(_THIS)
-{
-	Setscreen(-1,XBIOS_oldvbase,XBIOS_oldvmode);
 }
 
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)

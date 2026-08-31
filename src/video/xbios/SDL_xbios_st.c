@@ -88,9 +88,7 @@ static void setMode_ST(_THIS, const xbiosmode_t *new_video_mode)
 {
 	int i;
 
-	Setscreen(-1,XBIOS_screens[0],-1);
-
-	Setscreen(-1,-1,new_video_mode->number);
+	Setscreen(-1,XBIOS_screens[0],new_video_mode->number);
 
 	/* Reset palette, 8 shades of gray with a bit of green interleaved */
 	for (i=0;i<16;i++) {
@@ -103,9 +101,7 @@ static void setMode_STE(_THIS, const xbiosmode_t *new_video_mode)
 {
 	int i;
 
-	Setscreen(-1,XBIOS_screens[0],-1);
-
-	Setscreen(-1,-1,new_video_mode->number);
+	Setscreen(-1,XBIOS_screens[0],new_video_mode->number);
 
 	/* Reset palette, 16 shades of gray */
 	for (i=0;i<16;i++) {
