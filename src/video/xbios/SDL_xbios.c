@@ -210,9 +210,6 @@ static SDL_VideoDevice *XBIOS_CreateDevice(int devindex)
 	device->GL_SwapBuffers = XBIOS_GL_SwapBuffers;
 #endif
 
-	/* Events (XBIOS/IKBD driver) */
-	SDL_Atari_InitializeEvents(device);
-
 	device->free = XBIOS_DeleteDevice;
 
 	device->hidden->updRects = XBIOS_UpdateRects;
@@ -309,6 +306,10 @@ void SDL_XBIOS_AddMode(_THIS, int actually_add, const xbiosmode_t *modeinfo)
 static int XBIOS_VideoInit(_THIS, SDL_PixelFormat *vformat)
 {
 	int i;
+
+	/* Events (XBIOS/IKBD driver) */
+	if (!SDL_Atari_InitializeEvents(this))
+		return(-1);
 
 	if (!GEM_CommonInit(&GEM_ap_id, &VDI_handle))
 		return(-1);
@@ -709,7 +710,7 @@ static void XBIOS_VideoQuit(_THIS)
 	/* Restore CON: */
 	SDL_Atari_RestoreConsoleSettings();
 
-	(*XBIOS_ShutdownEvents)(this);
+	SDL_Atari_ShutdownEvents(this);
 
 	/* Restore video mode and palette. XBIOS_saveMode() sets XBIOS_oldvbase
 	 * so it is a good test whether at least that ran. */

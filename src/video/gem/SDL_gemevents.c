@@ -357,7 +357,7 @@ static void do_mouse_motion(_THIS, short mx, short my)
 
 	/* Relative mouse motion ? */
 	if (GEM_mouse_relative) {
-		SDL_AtariXbios_PostMouseEvents(this, SDL_FALSE);
+		SDL_Atari_PostMouseEvents(this, SDL_FALSE);
 		return;
 	}
 

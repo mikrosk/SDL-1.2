@@ -38,7 +38,27 @@
 
 #define ATARIBIOS_MAXKEYS 128
 
-extern void SDL_Atari_InitializeEvents(_THIS);
+#define ATARI_KEY_PRESSED	0xff
+#define ATARI_KEY_UNDEFINED	0x80
+#define ATARI_KEY_RELEASED	0x00
+
+#define ATARI_JOY_UP	(1<<0)
+#define ATARI_JOY_DOWN	(1<<1)
+#define ATARI_JOY_LEFT	(1<<2)
+#define ATARI_JOY_RIGHT	(1<<3)
+#define ATARI_JOY_FIRE	(1<<7)
+
+/* State filled in by the IKBD or XBIOS interrupt vectors; only one of the
+   two drivers can be installed at a time */
+extern SDL_bool SDL_Atari_enabled;
+
+extern volatile Uint8  SDL_Atari_keyboard[ATARIBIOS_MAXKEYS];
+extern volatile Uint16 SDL_Atari_mouseb;
+extern volatile Sint16 SDL_Atari_mousex;
+extern volatile Sint16 SDL_Atari_mousey;
+extern volatile Uint8  SDL_Atari_joystick;
+
+extern SDL_bool SDL_Atari_InitializeEvents(_THIS);
 
 extern void SDL_Atari_InitializeConsoleSettings(void);
 extern void SDL_Atari_RestoreConsoleSettings(void);
@@ -49,5 +69,13 @@ extern void SDL_AtariMint_BackgroundTasks(void);
 
 SDL_keysym *SDL_Atari_TranslateKey(int scancode, SDL_keysym *keysym,
 	SDL_bool pressed, short kstate);
+
+extern void SDL_Atari_InstallVectors(void (*install)(void), void (*restore)(void));
+extern void SDL_Atari_RestoreVectors(void);
+
+extern void SDL_Atari_PumpEvents(_THIS);
+extern void SDL_Atari_ShutdownEvents(_THIS);
+extern void SDL_Atari_PostKeyboardEvents(_THIS);
+extern void SDL_Atari_PostMouseEvents(_THIS, SDL_bool buttonEvents);
 
 #endif /* _SDL_ATARI_EVENTS_H_ */

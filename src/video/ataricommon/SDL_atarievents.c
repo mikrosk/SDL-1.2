@@ -29,6 +29,8 @@
  *	These routines choose what the final event manager will be
  */
 
+#include <mint/cookie.h>
+#include <mint/mintbind.h>
 #include <mint/osbind.h>
 #include <mint/sysvars.h>
 
@@ -36,9 +38,8 @@
 #include "../../events/SDL_events_c.h"
 #include "../../timer/SDL_timer_c.h"
 
-#include "../xbios/SDL_xbios.h"	/* XBIOS SDL_PrivateVideoData */
-
 #include "SDL_atarikeys.h"
+#include "SDL_atarimch.h"
 #include "SDL_atarievents_c.h"
 #include "SDL_ikbdevents_c.h"
 #include "SDL_xbiosevents_c.h"
@@ -50,6 +51,18 @@ void SDL_AtariMint_UpdateAudio(void);
 void SDL_AtariMint_CheckTimer(void);
 #endif
 
+/* Variables */
+
+SDL_bool SDL_Atari_enabled;
+
+volatile Uint8  SDL_Atari_keyboard[ATARIBIOS_MAXKEYS];
+volatile Uint16 SDL_Atari_mouseb;
+volatile Sint16 SDL_Atari_mousex;
+volatile Sint16 SDL_Atari_mousey;
+volatile Uint8  SDL_Atari_joystick;
+
+/* Local variables */
+
 /* The translation tables from a console scancode to a SDL keysym */
 static SDLKey keymap[ATARIBIOS_MAXKEYS];
 static const char *keytab_normal;
@@ -59,39 +72,243 @@ static const char *keytab_caps;
 static SDL_bool conterm_set;
 static char old_conterm;
 
-void SDL_Atari_InitializeEvents(_THIS)
+static Uint16 atari_prevmouseb;	/* save state of mouse buttons */
+static short kstate;
+static void (*old_procterm)(void);
+static void (*restore_vectors)(void);
+
+/* Functions */
+
+static int GetButton(int button)
+{
+	switch(button) {
+		case 0:
+			return SDL_BUTTON_RIGHT;
+		case 1:
+		default:
+			return SDL_BUTTON_LEFT;
+	}
+}
+
+static SDL_bool CheckAccess(const void *addr, size_t length)
+{
+	Uint32 flags;
+
+	if (Getcookie(C_MiNT, NULL) != C_FOUND)
+		return SDL_TRUE;
+
+	if (Mvalidate(0, addr, length, &flags) < 0)
+		return SDL_FALSE;
+
+	if (((flags+0x10)&0xf0) != MX_SUPERVISOR && ((flags+0x10)&0xf0) != MX_GLOBAL)
+		return SDL_FALSE;
+
+	return SDL_TRUE;
+}
+
+static SDL_bool IsIkbdSupported(void)
+{
+	long cookie_mch = SDL_Atari_GetMch();
+
+	/* The IKBD driver talks to the keyboard chip directly, which only
+	   Atari hardware and its emulators provide */
+	return (cookie_mch == MCH_ST<<16) || ((cookie_mch>>16) == MCH_STE) ||
+	       (cookie_mch == MCH_TT<<16) || (cookie_mch == MCH_F30<<16) ||
+	       (cookie_mch == MCH_ARANYM<<16);
+}
+
+SDL_bool SDL_Atari_InitializeEvents(_THIS)
 {
 	const char *envr;
 
 	SDL_Atari_InitInternalKeymap(this);
 
+	this->PumpEvents=SDL_Atari_PumpEvents;
+
 	if (!SDL_AtariXbios_IsKeyboardVectorSupported()) {
 		/* Fall back to hardware (TOS 1.x) */
+		if (!IsIkbdSupported()) {
+			SDL_SetError("No keyboard driver available for this machine");
+			return SDL_FALSE;
+		}
 		this->InitOSKeymap=AtariIkbd_InitOSKeymap;
-		this->PumpEvents=AtariIkbd_PumpEvents;
-		XBIOS_ShutdownEvents=AtariIkbd_ShutdownEvents;
 	} else {
 		this->InitOSKeymap=AtariXbios_InitOSKeymap;
-		this->PumpEvents=AtariXbios_PumpEvents;
-		XBIOS_ShutdownEvents=AtariXbios_ShutdownEvents;
 	}
 
 	envr = SDL_getenv("SDL_ATARI_EVENTSDRIVER");
 
 	if (!envr) {
-		return;
+		return SDL_TRUE;
 	}
 
 	if (SDL_strcmp(envr, "ikbd") == 0) {
+		if (!IsIkbdSupported()) {
+			SDL_SetError("IKBD events driver requires Atari hardware");
+			return SDL_FALSE;
+		}
 		this->InitOSKeymap=AtariIkbd_InitOSKeymap;
-		this->PumpEvents=AtariIkbd_PumpEvents;
-		XBIOS_ShutdownEvents=AtariIkbd_ShutdownEvents;
 	}
 
 	if (SDL_strcmp(envr, "xbios") == 0) {
+		if (!SDL_AtariXbios_IsKeyboardVectorSupported()) {
+			SDL_SetError("XBIOS events driver requires TOS 2.0 or MagiC");
+			return SDL_FALSE;
+		}
 		this->InitOSKeymap=AtariXbios_InitOSKeymap;
-		this->PumpEvents=AtariXbios_PumpEvents;
-		XBIOS_ShutdownEvents=AtariXbios_ShutdownEvents;
+	}
+
+	return SDL_TRUE;
+}
+
+void SDL_Atari_InstallVectors(void (*install)(void), void (*restore)(void))
+{
+	SDL_memset((void *) SDL_Atari_keyboard, ATARI_KEY_UNDEFINED, sizeof(SDL_Atari_keyboard));
+
+	SDL_Atari_mouseb = 0;
+	SDL_Atari_mousex = SDL_Atari_mousey = 0;
+	SDL_Atari_joystick = 0;
+	atari_prevmouseb = 0;
+
+	kstate = Kbshift(-1) & K_CAPSLOCK;
+
+	/* All the vectors write into this module's variables */
+	if (!CheckAccess((void *) SDL_Atari_keyboard, sizeof(SDL_Atari_keyboard))) {
+		fprintf(stderr, "Insufficient privileges to install interrupt vectors. Set application's PRGFLAGS to Super.\n");
+		return;
+	}
+
+	Supexec(install);
+
+	restore_vectors = restore;
+	old_procterm = Setexc(VEC_PROCTERM, restore);
+
+	SDL_Atari_enabled = SDL_TRUE;
+}
+
+void SDL_Atari_RestoreVectors(void)
+{
+	if (SDL_Atari_enabled) {
+		Supexec(restore_vectors);
+		SDL_Atari_enabled = SDL_FALSE;
+	}
+
+	if (old_procterm != NULL) {
+		Setexc(VEC_PROCTERM, old_procterm);
+		old_procterm = NULL;
+	}
+}
+
+void SDL_Atari_PumpEvents(_THIS)
+{
+	SDL_AtariMint_BackgroundTasks();
+
+	SDL_Atari_PostKeyboardEvents(this);
+	SDL_Atari_PostMouseEvents(this, SDL_TRUE);
+}
+
+void SDL_Atari_ShutdownEvents(_THIS)
+{
+	SDL_Atari_RestoreVectors();
+}
+
+void SDL_Atari_PostKeyboardEvents(_THIS)
+{
+	size_t i;
+	SDL_keysym keysym;
+
+	if (!SDL_Atari_enabled) {
+		return;
+	}
+
+	for (i=0; i<sizeof(SDL_Atari_keyboard); i++) {
+		/* Key pressed ? */
+		if (SDL_Atari_keyboard[i]==ATARI_KEY_PRESSED) {
+			switch (i) {
+			case SCANCODE_LEFTSHIFT:
+				kstate |= K_LSHIFT;
+				break;
+			case SCANCODE_RIGHTSHIFT:
+				kstate |= K_RSHIFT;
+				break;
+			case SCANCODE_LEFTCONTROL:
+				kstate |= K_CTRL;
+				break;
+			case SCANCODE_LEFTALT:
+				kstate |= K_ALT;
+				break;
+			case SCANCODE_CAPSLOCK:
+				kstate ^= K_CAPSLOCK;
+				break;
+			case SCANCODE_ALTGR:
+				kstate |= 0x80;
+				break;
+			}
+
+			SDL_PrivateKeyboard(SDL_PRESSED,
+				SDL_Atari_TranslateKey(i, &keysym, SDL_TRUE, kstate));
+			SDL_Atari_keyboard[i]=ATARI_KEY_UNDEFINED;
+		}
+
+		/* Key released ? */
+		if (SDL_Atari_keyboard[i]==ATARI_KEY_RELEASED) {
+			switch (i) {
+			case SCANCODE_LEFTSHIFT:
+				kstate &= ~K_LSHIFT;
+				break;
+			case SCANCODE_RIGHTSHIFT:
+				kstate &= ~K_RSHIFT;
+				break;
+			case SCANCODE_LEFTCONTROL:
+				kstate &= ~K_CTRL;
+				break;
+			case SCANCODE_LEFTALT:
+				kstate &= ~K_ALT;
+				break;
+			case SCANCODE_ALTGR:
+				kstate &= ~0x80;
+				break;
+			}
+
+			if (i != SCANCODE_CAPSLOCK) {
+				SDL_PrivateKeyboard(SDL_RELEASED,
+					SDL_Atari_TranslateKey(i, &keysym, SDL_FALSE, kstate));
+			}
+			SDL_Atari_keyboard[i]=ATARI_KEY_UNDEFINED;
+		}
+	}
+}
+
+void SDL_Atari_PostMouseEvents(_THIS, SDL_bool buttonEvents)
+{
+	if (!SDL_Atari_enabled) {
+		return;
+	}
+
+	/* Mouse motion ? */
+	if (SDL_Atari_mousex || SDL_Atari_mousey) {
+		SDL_PrivateMouseMotion(0, 1, SDL_Atari_mousex, SDL_Atari_mousey);
+		SDL_Atari_mousex = SDL_Atari_mousey = 0;
+	}
+
+	/* Mouse button ? */
+	if (buttonEvents && (SDL_Atari_mouseb != atari_prevmouseb)) {
+		int i;
+
+		for (i=0;i<2;i++) {
+			int curbutton, prevbutton;
+
+			curbutton = SDL_Atari_mouseb & (1<<i);
+			prevbutton = atari_prevmouseb & (1<<i);
+
+			if (curbutton && !prevbutton) {
+				SDL_PrivateMouseButton(SDL_PRESSED, GetButton(i), 0, 0);
+			}
+			if (!curbutton && prevbutton) {
+				SDL_PrivateMouseButton(SDL_RELEASED, GetButton(i), 0, 0);
+			}
+		}
+		atari_prevmouseb = SDL_Atari_mouseb;
 	}
 }
 
