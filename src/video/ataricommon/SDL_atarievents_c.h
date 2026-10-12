@@ -76,6 +76,8 @@ extern void SDL_AtariMint_BackgroundTasks(void);
 SDL_keysym *SDL_Atari_TranslateKey(int scancode, SDL_keysym *keysym,
 	SDL_bool pressed, short kstate);
 
+extern SDL_bool SDL_Atari_CheckAccess(const void *addr, size_t length);
+
 extern void SDL_Atari_InstallVectors(void (*install)(void), void (*restore)(void));
 extern void SDL_Atari_RestoreVectors(void);
 

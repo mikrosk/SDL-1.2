@@ -97,22 +97,6 @@ static int GetButton(int button)
 	}
 }
 
-static SDL_bool CheckAccess(const void *addr, size_t length)
-{
-	Uint32 flags;
-
-	if (Getcookie(C_MiNT, NULL) != C_FOUND)
-		return SDL_TRUE;
-
-	if (Mvalidate(0, addr, length, &flags) < 0)
-		return SDL_FALSE;
-
-	if (((flags+0x10)&0xf0) != MX_SUPERVISOR && ((flags+0x10)&0xf0) != MX_GLOBAL)
-		return SDL_FALSE;
-
-	return SDL_TRUE;
-}
-
 static SDL_bool IsIkbdSupported(void)
 {
 	long cookie_mch = SDL_Atari_GetMch();
@@ -127,6 +111,22 @@ static SDL_bool IsIkbdSupported(void)
 	return (cookie_mch == MCH_ST<<16) || ((cookie_mch>>16) == MCH_STE) ||
 	       (cookie_mch == MCH_TT<<16) || (cookie_mch == MCH_F30<<16) ||
 	       (cookie_mch == MCH_ARANYM<<16);
+}
+
+SDL_bool SDL_Atari_CheckAccess(const void *addr, size_t length)
+{
+	Uint32 flags;
+
+	if (Getcookie(C_MiNT, NULL) != C_FOUND)
+		return SDL_TRUE;
+
+	if (Mvalidate(0, addr, length, &flags) < 0)
+		return SDL_FALSE;
+
+	if (((flags+0x10)&0xf0) != MX_SUPERVISOR && ((flags+0x10)&0xf0) != MX_GLOBAL)
+		return SDL_FALSE;
+
+	return SDL_TRUE;
 }
 
 SDL_AtariEventsDriver SDL_Atari_GetEventsDriver(SDL_bool gemVideo)
@@ -193,7 +193,7 @@ void SDL_Atari_InstallVectors(void (*install)(void), void (*restore)(void))
 	kstate = Kbshift(-1) & (K_RSHIFT | K_LSHIFT | K_CTRL | K_ALT | K_CAPSLOCK | K_ALTGR);
 
 	/* All the vectors write into this module's variables */
-	if (!CheckAccess((void *) SDL_Atari_queue, sizeof(SDL_Atari_queue))) {
+	if (!SDL_Atari_CheckAccess((void *) SDL_Atari_queue, sizeof(SDL_Atari_queue))) {
 		fprintf(stderr, "Insufficient privileges to install interrupt vectors. Set application's PRGFLAGS to Super.\n");
 		return;
 	}

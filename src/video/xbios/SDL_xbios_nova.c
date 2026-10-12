@@ -105,6 +105,9 @@ void SDL_XBIOS_VideoInit_Nova(_THIS, void *cookie_nova)
 	XBIOS_allocVbuffers = allocVbuffers;
 	XBIOS_freeVbuffers = freeVbuffers;
 
+	/* SDL_TRIPLEBUF falls back to double buffering */
+	XBIOS_initTripleBuffer = NULL;
+
 	this->SetColors = setColors;
 
 	for (i=0; i<256; i++) {

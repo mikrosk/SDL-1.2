@@ -101,6 +101,9 @@ void SDL_XBIOS_VideoInit_Ctpci(_THIS)
 	XBIOS_swapVbuffers = swapVbuffers;
 	XBIOS_allocVbuffers = allocVbuffers;
 	XBIOS_freeVbuffers = freeVbuffers;
+
+	/* SDL_TRIPLEBUF falls back to double buffering */
+	XBIOS_initTripleBuffer = NULL;
 }
 
 /*

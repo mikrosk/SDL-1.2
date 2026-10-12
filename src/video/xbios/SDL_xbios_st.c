@@ -66,6 +66,8 @@ void SDL_XBIOS_VideoInit_ST(_THIS, unsigned long cookie_cvdo)
 	XBIOS_allocVbuffers = allocVbuffers;
 	XBIOS_freeVbuffers = freeVbuffers;
 
+	XBIOS_initTripleBuffer = SDL_XBIOS_InitTripleBuffer;
+
 	this->SetColors = setColors;
 
 	if ((cookie_cvdo>>16) == VDO_STE) {
@@ -165,7 +167,7 @@ static void freeVbuffers(_THIS)
 {
 	int i;
 
-	for (i=0;i<2;i++) {
+	for (i=0;i<SDL_arraysize(XBIOS_screensmem);i++) {
 		if (XBIOS_screensmem[i]) {
 			Mfree(XBIOS_screensmem[i]);
 			XBIOS_screensmem[i]=NULL;

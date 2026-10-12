@@ -80,6 +80,9 @@ void SDL_XBIOS_VideoInit_Milan(_THIS)
 	XBIOS_allocVbuffers = allocVbuffers;
 	XBIOS_freeVbuffers = freeVbuffers;
 
+	/* SDL_TRIPLEBUF falls back to double buffering */
+	XBIOS_initTripleBuffer = NULL;
+
 	/* CTPCI doesn't need this as it's inherited from xbios_f030 */
 	this->SetColors = setColors;
 }

@@ -82,6 +82,9 @@ void SDL_XBIOS_VideoInit_V4(_THIS)
 	XBIOS_listModes     = listModes;
 	XBIOS_saveMode      = saveMode;
 	XBIOS_allocVbuffers = allocVbuffers_V4;
+
+	/* SDL_TRIPLEBUF falls back to double buffering */
+	XBIOS_initTripleBuffer = NULL;
 }
 
 static void listModes(_THIS, int actually_add)

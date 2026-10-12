@@ -35,6 +35,7 @@
 #include <mint/falcon.h>
 #include <mint/osbind.h>
 #include <mint/ostruct.h>
+#include <mint/sysvars.h>
 
 #include "SDL_video.h"
 #include "../SDL_sysvideo.h"
@@ -47,6 +48,7 @@
 #include "../ataricommon/SDL_atarimxalloc_c.h"
 #include "../ataricommon/SDL_geminit_c.h"
 #include "../ataricommon/SDL_ikbdevents_c.h"
+#include "../ataricommon/SDL_atarisuper.h"
 #include "../ataricommon/SDL_xbiosevents_c.h"
 
 #include "SDL_xbios.h"
@@ -89,7 +91,18 @@ static void XBIOS_UpdateRects(_THIS, int numrects, SDL_Rect *rects);
 static void XBIOS_GL_SwapBuffers(_THIS);
 #endif
 
+/* Triple buffering functions */
+static void XBIOS_FlipTripleBuffer(_THIS);
+static void XBIOS_QuitTripleBuffer(_THIS);
+static void XBIOS_RemoveVbl(void);
+static void XBIOS_VblProcterm(void);
+
 static SDL_bool shadow_warning_shown;
+
+/* Triple buffering */
+static Uint32 tb_frclock;		/* _frclock when the queued frame has been written */
+static void (*tb_vbl)(void);		/* Installed VBL queue handler */
+static void (*tb_old_procterm)(void);
 
 /* Xbios driver bootstrap functions */
 
@@ -306,6 +319,106 @@ void SDL_XBIOS_AddMode(_THIS, int actually_add, const xbiosmode_t *modeinfo)
 	}
 }
 
+/*
+ * Triple buffering: SDL_Flip() queues the finished frame and returns at once
+ * with a free buffer; a frame which hasn't been displayed yet is replaced by
+ * a newer one.
+ *
+ * The ST/STE/TT Shifter reloads its video counter from the video base
+ * registers a few lines before the VBL and again on the following line(s), so
+ * SDL_Flip() writes the registers itself and the queued frame is displayed
+ * once a VBL has happened since. Where this doesn't work, XBIOS_initTripleBuffer
+ * is a special version or NULL (SDL_TRIPLEBUF falls back to double buffering).
+ *
+ * Called once the buffers are allocated, before XBIOS_setMode() displays
+ * XBIOS_screens[0].
+ */
+SDL_bool SDL_XBIOS_InitTripleBuffer(_THIS)
+{
+	Uint16 sr;
+	void *ssp;
+
+	XBIOS_fbqueued = 0;
+	XBIOS_fbfront = 1;
+	XBIOS_fbnum = 2;
+
+	ssp = SDL_XBIOS_LockVbl(&sr);
+	/* XBIOS_setMode() and XBIOS_vsync() display XBIOS_screens[0] after this */
+	tb_frclock = *_frclock;
+	SDL_XBIOS_UnlockVbl(ssp, sr);
+
+	XBIOS_flipTripleBuffer = XBIOS_FlipTripleBuffer;
+	return SDL_TRUE;
+}
+
+/* Install a VBL queue handler, removed when triple buffering stops or the
+   process terminates */
+SDL_bool SDL_XBIOS_InstallVbl(void (*handler)(void))
+{
+	void (**queue)(void);
+	SDL_bool installed = SDL_FALSE;
+	Uint16 sr;
+	void *ssp;
+	int i;
+
+	/* The handler runs whichever process is active */
+	if (!SDL_Atari_CheckAccess((const void *) &tb_vbl, sizeof(tb_vbl))) {
+		return SDL_FALSE;
+	}
+
+	ssp = SDL_XBIOS_LockVbl(&sr);
+	queue = (void (**)(void)) *_vblqueue;
+	for (i = 0; i < *nvbls; i++) {
+		if (queue[i] == NULL) {
+			queue[i] = handler;
+			installed = SDL_TRUE;
+			break;
+		}
+	}
+	SDL_XBIOS_UnlockVbl(ssp, sr);
+
+	if (installed) {
+		tb_vbl = handler;
+		tb_old_procterm = Setexc(VEC_PROCTERM, XBIOS_VblProcterm);
+	}
+	return installed;
+}
+
+/* Enter supervisor mode and hold off the VBL interrupt */
+void *SDL_XBIOS_LockVbl(Uint16 *sr)
+{
+	void *ssp = Super(SUP_INQUIRE) ? NULL : (void *) Super(SUP_SET);
+
+	__asm__ __volatile__ ("movew %%sr,%0" : "=d"(*sr));
+	if ((*sr & 0x0700) < 0x0400) {
+		const Uint16 locked = (*sr & ~0x0700) | 0x0400;
+
+		__asm__ __volatile__ ("movew %0,%%sr" : : "d"(locked) : "cc", "memory");
+	}
+	return ssp;
+}
+
+void SDL_XBIOS_UnlockVbl(void *ssp, Uint16 sr)
+{
+	__asm__ __volatile__ ("movew %0,%%sr" : : "d"(sr) : "cc", "memory");
+	if (ssp) {
+		SuperToUser(ssp);
+	}
+}
+
+/* Supervisor only */
+void SDL_XBIOS_SetVideoBase(const void *screen)
+{
+	const Uint32 base = (Uint32) screen;
+
+	*((volatile Uint8 *) 0xFFFF8201) = base >> 16;
+	*((volatile Uint8 *) 0xFFFF8203) = base >> 8;
+	if ((cookie_vdo >> 16) != VDO_ST) {
+		/* Must be written after the high and middle bytes (STE) */
+		*((volatile Uint8 *) 0xFFFF820D) = base;
+	}
+}
+
 /* Keyboard, mouse and joystick from the XBIOS vectors or straight from the
    IKBD, see SDL_ATARI_EVENTSDRIVER in README.MiNT */
 static int XBIOS_InitEvents(_THIS)
@@ -412,6 +525,7 @@ static int XBIOS_VideoInit(_THIS, SDL_PixelFormat *vformat)
 
 	XBIOS_screens[0]=NULL;
 	XBIOS_screens[1]=NULL;
+	XBIOS_screens[2]=NULL;
 	XBIOS_shadowscreen=NULL;
 
 	/* Update hardware info */
@@ -437,6 +551,8 @@ static SDL_Rect **XBIOS_ListModes(_THIS, SDL_PixelFormat *format, Uint32 flags)
 
 static void XBIOS_FreeBuffers(_THIS)
 {
+	XBIOS_QuitTripleBuffer(this);
+
 	(*XBIOS_freeVbuffers)(this);
 
 	if (XBIOS_shadowscreenmem) {
@@ -516,7 +632,10 @@ static SDL_Surface *XBIOS_SetVideoMode(_THIS, SDL_Surface *current,
 		}
 	}
 #endif
-	if (flags & SDL_DOUBLEBUF) {
+	if ((flags & SDL_TRIPLEBUF) == SDL_TRIPLEBUF && XBIOS_initTripleBuffer) {
+		num_buffers = 3;
+		modeflags |= SDL_DOUBLEBUF;
+	} else if (flags & SDL_DOUBLEBUF) {
 		num_buffers = 2;
 		modeflags |= SDL_DOUBLEBUF;
 	}
@@ -553,7 +672,12 @@ static SDL_Surface *XBIOS_SetVideoMode(_THIS, SDL_Surface *current,
 	 * and XBIOS_swapVbuffers() is going to call Setscreen(XBIOS_screens[XBIOS_fbnum])
 	 * so these can't be the same buffers if double buffering has been requested.
 	 */
-	XBIOS_fbnum = num_buffers-1;
+	if (num_buffers == 3 && (*XBIOS_initTripleBuffer)(this)) {
+		modeflags |= SDL_TRIPLEBUF;
+	} else {
+		/* Double buffering if the VBL handler can't be installed */
+		XBIOS_fbnum = (num_buffers > 1 ? 1 : 0);
+	}
 	XBIOS_current = new_video_mode;
 
 	current->w = width;
@@ -617,6 +741,108 @@ static void XBIOS_UnlockHWSurface(_THIS, SDL_Surface *surface)
 	return;
 }
 
+/* Queue XBIOS_screens[XBIOS_fbnum] and make XBIOS_fbnum a free buffer */
+static void XBIOS_FlipTripleBuffer(_THIS)
+{
+	const int work = XBIOS_fbnum;
+	Uint16 sr;
+	void *ssp = SDL_XBIOS_LockVbl(&sr);
+	const Uint32 frclock = *_frclock;
+
+	if (frclock == tb_frclock) {
+		/* No VBL since the queued frame has been written: the Shifter hasn't
+		   latched it, replace it */
+		XBIOS_fbnum = XBIOS_fbqueued;
+	} else {
+		/* The queued frame is displayed: the front buffer is free */
+		XBIOS_fbnum = XBIOS_fbfront;
+		XBIOS_fbfront = XBIOS_fbqueued;
+	}
+	XBIOS_fbqueued = work;
+
+	SDL_XBIOS_SetVideoBase(XBIOS_screens[work]);
+	tb_frclock = frclock;
+
+	SDL_XBIOS_UnlockVbl(ssp, sr);
+}
+
+/* Must be called before the events vectors are restored: both chain the
+   process termination vector */
+static void XBIOS_QuitTripleBuffer(_THIS)
+{
+	if (!XBIOS_flipTripleBuffer) {
+		return;
+	}
+
+	if (tb_vbl) {
+		Uint16 sr;
+		void *ssp = SDL_XBIOS_LockVbl(&sr);
+
+		XBIOS_RemoveVbl();
+		SDL_XBIOS_UnlockVbl(ssp, sr);
+
+		Setexc(VEC_PROCTERM, tb_old_procterm);
+		tb_vbl = NULL;
+	}
+
+	XBIOS_flipTripleBuffer = NULL;
+}
+
+/* Supervisor only, VBL locked */
+static void XBIOS_RemoveVbl(void)
+{
+	void (**queue)(void) = (void (**)(void)) *_vblqueue;
+	int i;
+
+	for (i = 0; i < *nvbls; i++) {
+		if (queue[i] == tb_vbl) {
+			queue[i] = NULL;
+		}
+	}
+}
+
+/* Called in supervisor mode when the process terminates */
+static void XBIOS_VblProcterm(void)
+{
+	Uint16 sr;
+	void *ssp = SDL_XBIOS_LockVbl(&sr);
+
+	XBIOS_RemoveVbl();
+	SDL_XBIOS_UnlockVbl(ssp, sr);
+
+	tb_old_procterm();
+}
+
+/* Display XBIOS_screens[XBIOS_fbnum] and continue with another buffer */
+static void XBIOS_SwapBuffers(_THIS, SDL_Surface *surface)
+{
+	if (XBIOS_flipTripleBuffer) {
+		(*XBIOS_flipTripleBuffer)(this);
+	} else {
+#ifndef DEBUG_VIDEO_XBIOS
+		if ((cookie_vdo >> 16) != VDO_F30) {
+			(*XBIOS_swapVbuffers)(this);
+
+			(*XBIOS_vsync)(this);
+		} else {
+			/* Make sure that the Videl registers are updated during vertical retrace */
+			(*XBIOS_vsync)(this);
+
+			(*XBIOS_swapVbuffers)(this);
+		}
+#endif
+
+		XBIOS_fbnum ^= 1;
+	}
+
+	if (!XBIOS_shadowscreen) {
+		/* SDL_LockSurface() adds surface->offset to surface->pixels */
+		const int offset = (surface->locked ? surface->offset : 0);
+
+		surface->pixels = ((Uint8 *) XBIOS_screens[XBIOS_fbnum]) + offset;
+	}
+}
+
 static void XBIOS_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 {
 	/* SDL_UpdateRects() already added surface->offset_[xy] to each rect's coordinates */
@@ -659,24 +885,7 @@ static void XBIOS_UpdateRects(_THIS, int numrects, SDL_Rect *rects)
 	}
 
 	if ((surface->flags & SDL_DOUBLEBUF) == SDL_DOUBLEBUF) {
-#ifndef DEBUG_VIDEO_XBIOS
-		if ((cookie_vdo >> 16) != VDO_F30) {
-			(*XBIOS_swapVbuffers)(this);
-
-			(*XBIOS_vsync)(this);
-		} else {
-			/* Make sure that the Videl registers are updated during vertical retrace */
-			(*XBIOS_vsync)(this);
-
-			(*XBIOS_swapVbuffers)(this);
-		}
-#endif
-
-		XBIOS_fbnum ^= 1;
-		if (!XBIOS_shadowscreen) {
-			src_offset = (surface->locked ? surface->offset : 0);
-			surface->pixels=((Uint8 *) XBIOS_screens[XBIOS_fbnum]) + src_offset;
-		}
+		XBIOS_SwapBuffers(this, surface);
 	}
 }
 
@@ -708,24 +917,7 @@ static int XBIOS_FlipHWSurface(_THIS, SDL_Surface *surface)
 	}
 
 	if ((surface->flags & SDL_DOUBLEBUF) == SDL_DOUBLEBUF) {
-#ifndef DEBUG_VIDEO_XBIOS
-		if ((cookie_vdo >> 16) != VDO_F30) {
-			(*XBIOS_swapVbuffers)(this);
-
-			(*XBIOS_vsync)(this);
-		} else {
-			/* Make sure that the Videl registers are updated during vertical retrace */
-			(*XBIOS_vsync)(this);
-
-			(*XBIOS_swapVbuffers)(this);
-		}
-#endif
-
-		XBIOS_fbnum ^= 1;
-		if (!XBIOS_shadowscreen) {
-			src_offset = (surface->locked ? surface->offset : 0);
-			surface->pixels=((Uint8 *) XBIOS_screens[XBIOS_fbnum]) + src_offset;
-		}
+		XBIOS_SwapBuffers(this, surface);
 	}
 
 	return(0);
@@ -738,6 +930,9 @@ static int XBIOS_FlipHWSurface(_THIS, SDL_Surface *surface)
 static void XBIOS_VideoQuit(_THIS)
 {
 	int i,j;
+
+	/* Before SDL_Atari_RestoreVectors(), both chain the process termination vector */
+	XBIOS_QuitTripleBuffer(this);
 
 	/* Restore CON: */
 	SDL_Atari_RestoreConsoleSettings();

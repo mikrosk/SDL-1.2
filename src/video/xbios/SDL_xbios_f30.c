@@ -117,11 +117,17 @@ static const xbiosmode_t sv_modes[]={
 
 static int has_supervidel;
 
+/* Triple buffering: frame to write into the video base registers */
+static void * volatile vbl_pending;
+
 static void listModes(_THIS, int actually_add);
 static void saveMode(_THIS, SDL_PixelFormat *vformat);
 static void setMode(_THIS, const xbiosmode_t *new_video_mode);
 static void restoreMode(_THIS);
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors);
+static SDL_bool initTripleBuffer(_THIS);
+static void flipTripleBuffer(_THIS);
+static void vblTripleBuffer(void);
 
 static int allocVbuffers_SV(_THIS, const xbiosmode_t *new_video_mode, int num_buffers, int bufsize);
 
@@ -155,6 +161,7 @@ void SDL_XBIOS_VideoInit_F30(_THIS)
 	XBIOS_saveMode = saveMode;
 	XBIOS_setMode = setMode;
 	XBIOS_restoreMode = restoreMode;
+	XBIOS_initTripleBuffer = initTripleBuffer;
 
 	/*
 	 * Must be set before others as it may or may not
@@ -304,4 +311,55 @@ static int allocVbuffers_SV(_THIS, const xbiosmode_t *new_video_mode, int num_bu
 	}
 
 	return (1);
+}
+
+/*
+ * Triple buffering: the Videl reloads its video counter only once, at VDB
+ * after the VBL, so a VBL queue handler writes the video base registers and
+ * the frame is displayed in the same frame. VsetRGB() sets the palette in the
+ * next VBL as well, i.e. together with the most recently flipped frame.
+ */
+static SDL_bool initTripleBuffer(_THIS)
+{
+	vbl_pending = NULL;
+
+	if (!SDL_XBIOS_InstallVbl(vblTripleBuffer)) {
+		return SDL_FALSE;
+	}
+
+	XBIOS_fbqueued = 0;
+	XBIOS_fbfront = 1;
+	XBIOS_fbnum = 2;
+
+	XBIOS_flipTripleBuffer = flipTripleBuffer;
+	return SDL_TRUE;
+}
+
+/* Queue XBIOS_screens[XBIOS_fbnum] and make XBIOS_fbnum a free buffer */
+static void flipTripleBuffer(_THIS)
+{
+	const int work = XBIOS_fbnum;
+	Uint16 sr;
+	void *ssp = SDL_XBIOS_LockVbl(&sr);
+
+	if (vbl_pending) {
+		/* The queued frame hasn't reached the video base registers: replace it */
+		XBIOS_fbnum = XBIOS_fbqueued;
+	} else {
+		/* The queued frame is displayed: the front buffer is free */
+		XBIOS_fbnum = XBIOS_fbfront;
+		XBIOS_fbfront = XBIOS_fbqueued;
+	}
+	XBIOS_fbqueued = work;
+	vbl_pending = XBIOS_screens[work];
+
+	SDL_XBIOS_UnlockVbl(ssp, sr);
+}
+
+static void vblTripleBuffer(void)
+{
+	if (vbl_pending) {
+		SDL_XBIOS_SetVideoBase(vbl_pending);
+		vbl_pending = NULL;
+	}
 }

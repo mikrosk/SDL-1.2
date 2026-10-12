@@ -178,6 +178,9 @@ Xbios video:
 	accessed on a per-pixel basis —or if pixels are read multiple times—
 	prefer SDL_SWSURFACE.
 
+	SDL_TRIPLEBUF is supported on ST, STE, TT and Falcon, elsewhere it
+	falls back to SDL_DOUBLEBUF.
+
 Gem video:
 	Automatically used if xbios not available.
 
