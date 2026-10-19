@@ -105,6 +105,9 @@ void SDL_XBIOS_VideoInit_Nova(_THIS, void *cookie_nova)
 	XBIOS_allocVbuffers = allocVbuffers;
 	XBIOS_freeVbuffers = freeVbuffers;
 
+	/* SDL_TRIPLEBUF falls back to double buffering */
+	XBIOS_tripleBuffer = SDL_FALSE;
+
 	this->SetColors = setColors;
 
 	for (i=0; i<256; i++) {
@@ -240,8 +243,8 @@ static void vsync(_THIS)
 
 static void swapVbuffers(_THIS)
 {
-	if (XBIOS_screens[XBIOS_fbnum] != NOVA_xcb->scr_base) {
-		NOVA_SetScreen(this, XBIOS_screens[XBIOS_fbnum]);
+	if (XBIOS_screens[XBIOS_fbwork] != NOVA_xcb->scr_base) {
+		NOVA_SetScreen(this, XBIOS_screens[XBIOS_fbwork]);
 	}
 }
 

@@ -52,6 +52,7 @@ static void swapVbuffers(_THIS);
 static int allocVbuffers(_THIS, const xbiosmode_t *new_video_mode, int num_buffers, int bufsize);
 static void freeVbuffers(_THIS);
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors);
+static void queueVbuffer(_THIS, void *screen);
 
 void SDL_XBIOS_VideoInit_ST(_THIS, unsigned long cookie_cvdo)
 {
@@ -65,6 +66,8 @@ void SDL_XBIOS_VideoInit_ST(_THIS, unsigned long cookie_cvdo)
 	XBIOS_swapVbuffers = swapVbuffers;
 	XBIOS_allocVbuffers = allocVbuffers;
 	XBIOS_freeVbuffers = freeVbuffers;
+	XBIOS_queueVbuffer = queueVbuffer;
+	XBIOS_tripleBuffer = SDL_TRUE;
 
 	this->SetColors = setColors;
 
@@ -139,7 +142,7 @@ static int getLineWidth(_THIS, const xbiosmode_t *new_video_mode, int width, int
 
 static void swapVbuffers(_THIS)
 {
-	Setscreen(-1,XBIOS_screens[XBIOS_fbnum],-1);
+	Setscreen(-1,XBIOS_screens[XBIOS_fbwork],-1);
 }
 
 static int allocVbuffers(_THIS, const xbiosmode_t *new_video_mode, int num_buffers, int bufsize)
@@ -165,7 +168,7 @@ static void freeVbuffers(_THIS)
 {
 	int i;
 
-	for (i=0;i<2;i++) {
+	for (i=0;i<SDL_arraysize(XBIOS_screensmem);i++) {
 		if (XBIOS_screensmem[i]) {
 			Mfree(XBIOS_screensmem[i]);
 			XBIOS_screensmem[i]=NULL;
@@ -189,4 +192,9 @@ static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 	}
 
 	return(1);
+}
+
+static void queueVbuffer(_THIS, void *screen)
+{
+	Setscreen(-1,screen,-1);
 }

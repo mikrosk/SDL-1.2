@@ -64,11 +64,15 @@ struct SDL_PrivateVideoData {
 	long old_video_mode;		/* Old video mode before entering SDL */
 	void *old_video_base;		/* Old pointer to screen buffer */
 
-	void *screens[2];		/* Pointers to aligned screen buffer */
-	void *screensmem[2];		/* Pointers to screen buffer */
+	void *screens[3];		/* Pointers to aligned screen buffer */
+	void *screensmem[3];		/* Pointers to screen buffer */
 	void *shadowscreen;		/* Pointer to aligned shadow screen buffer */
 	void *shadowscreenmem;		/* Pointers to shadow screen buffer */
-	int frame_number;		/* Number of frame for double buffer */
+	int frame_work;			/* Frame being drawn */
+	int frame_queued;		/* Triple buffer: most recently flipped frame */
+	int frame_front;		/* Triple buffer: frame displayed before it */
+	Uint32 queued_vbclock;		/* Triple buffer: _vbclock when frame_queued was queued */
+	SDL_bool triple_buffer;		/* Triple buffering supported, cleared by a mode not using it */
 	int pitch;			/* Destination line width for C2P */
 
 	const xbiosmode_t *current;	/* Current set mode */
@@ -91,6 +95,8 @@ struct SDL_PrivateVideoData {
 	void (*swapVbuffers)(_THIS);	/* Swap video buffers */
 	int (*allocVbuffers)(_THIS, const xbiosmode_t *new_video_mode, int num_buffers, int bufsize);	/* Allocate video buffers */
 	void (*freeVbuffers)(_THIS);	/* Free video buffers */
+	void (*vblTripleBuffer)(void);	/* VBL handler for triple buffering, NULL if none is needed */
+	void (*queueVbuffer)(_THIS, void *screen);	/* Display screen as soon as possible; VBL locked */
 
 	void (*updRects)(_THIS, int numrects, SDL_Rect *rects);	/* updateRects to use when video ready */
 };
@@ -127,7 +133,11 @@ enum {
 #define XBIOS_screensmem	(this->hidden->screensmem)
 #define XBIOS_shadowscreen	(this->hidden->shadowscreen)
 #define XBIOS_shadowscreenmem	(this->hidden->shadowscreenmem)
-#define XBIOS_fbnum		(this->hidden->frame_number)
+#define XBIOS_fbwork		(this->hidden->frame_work)
+#define XBIOS_fbqueued		(this->hidden->frame_queued)
+#define XBIOS_fbfront		(this->hidden->frame_front)
+#define XBIOS_queuedVbclock	(this->hidden->queued_vbclock)
+#define XBIOS_tripleBuffer	(this->hidden->triple_buffer)
 #define XBIOS_pitch		(this->hidden->pitch)
 #define XBIOS_current		(this->hidden->current)
 
@@ -144,6 +154,8 @@ enum {
 #define XBIOS_swapVbuffers	(this->hidden->swapVbuffers)
 #define XBIOS_allocVbuffers	(this->hidden->allocVbuffers)
 #define XBIOS_freeVbuffers	(this->hidden->freeVbuffers)
+#define XBIOS_vblTripleBuffer	(this->hidden->vblTripleBuffer)
+#define XBIOS_queueVbuffer	(this->hidden->queueVbuffer)
 
 #define XBIOS_updRects		(this->hidden->updRects)
 

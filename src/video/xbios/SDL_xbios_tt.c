@@ -40,14 +40,24 @@ static const xbiosmode_t ttmodes[]={
 	{TT_LOW>>8,320,240,8,XBIOSMODE_C2P|XBIOSMODE_DOUBLELINE}
 };
 
+/* Triple buffering: palette to set in the next VBL */
+static volatile struct {
+	short pending;
+	short first;
+	short last;
+	Uint16 colors[256];
+} vbl_palette;
+
 static void listModes(_THIS, int actually_add);
 static void setMode(_THIS, const xbiosmode_t *new_video_mode);
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors);
+static void vblTripleBuffer(void);
 
 void SDL_XBIOS_VideoInit_TT(_THIS)
 {
 	XBIOS_listModes = listModes;
 	XBIOS_setMode = setMode;
+	XBIOS_vblTripleBuffer = vblTripleBuffer;
 
 	this->SetColors = setColors;
 }
@@ -77,7 +87,47 @@ static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 
 		TT_palette[i]=((r>>4)<<8)|((g>>4)<<4)|(b>>4);
 	}
-	EsetPalette(firstcolor,ncolors,TT_palette);
+
+	if (XBIOS_tripleBuffer) {
+		/* EsetPalette() sets the palette immediately, the frame flipped
+		   before is displayed only from the next VBL on */
+		const int lastcolor = firstcolor + ncolors - 1;
+		const short pending = vbl_palette.pending;
+
+		/* The VBL handler skips an incomplete palette; should it set the
+		   pending one meanwhile, the merged range sets its colors again */
+		vbl_palette.pending = 0;
+		if (!pending || firstcolor < vbl_palette.first) {
+			vbl_palette.first = firstcolor;
+		}
+		if (!pending || lastcolor > vbl_palette.last) {
+			vbl_palette.last = lastcolor;
+		}
+		for (i = 0; i < ncolors; i++) {
+			vbl_palette.colors[firstcolor + i] = TT_palette[i];
+		}
+		vbl_palette.pending = 1;
+	} else {
+		/* Deliberately immediate, even in the middle of a frame: there is no
+		   XBIOS call to set the TT palette in the next VBL and waiting for it
+		   here costs a frame to applications which set the palette several
+		   times per frame */
+		EsetPalette(firstcolor,ncolors,TT_palette);
+	}
 
 	return(1);
+}
+
+/* Triple buffering as on ST/STE, the VBL handler only sets the palette */
+static void vblTripleBuffer(void)
+{
+	if (vbl_palette.pending) {
+		volatile Uint16 *tt_palette = (volatile Uint16 *) 0xFFFF8400;
+		int i;
+
+		for (i = vbl_palette.first; i <= vbl_palette.last; i++) {
+			tt_palette[i] = vbl_palette.colors[i];
+		}
+		vbl_palette.pending = 0;
+	}
 }

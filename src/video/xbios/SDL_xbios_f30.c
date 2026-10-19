@@ -117,11 +117,16 @@ static const xbiosmode_t sv_modes[]={
 
 static int has_supervidel;
 
+/* Triple buffering: video base to set in the next VBL */
+static void * volatile vbl_screen;
+
 static void listModes(_THIS, int actually_add);
 static void saveMode(_THIS, SDL_PixelFormat *vformat);
 static void setMode(_THIS, const xbiosmode_t *new_video_mode);
 static void restoreMode(_THIS);
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors);
+static void queueVbuffer(_THIS, void *screen);
+static void vblTripleBuffer(void);
 
 static int allocVbuffers_SV(_THIS, const xbiosmode_t *new_video_mode, int num_buffers, int bufsize);
 
@@ -155,6 +160,8 @@ void SDL_XBIOS_VideoInit_F30(_THIS)
 	XBIOS_saveMode = saveMode;
 	XBIOS_setMode = setMode;
 	XBIOS_restoreMode = restoreMode;
+	XBIOS_vblTripleBuffer = vblTripleBuffer;
+	XBIOS_queueVbuffer = queueVbuffer;
 
 	/*
 	 * Must be set before others as it may or may not
@@ -304,4 +311,28 @@ static int allocVbuffers_SV(_THIS, const xbiosmode_t *new_video_mode, int num_bu
 	}
 
 	return (1);
+}
+
+/*
+ * Triple buffering: the Videl reloads its video counter only once, at VDB
+ * after the VBL, so a VBL queue handler writes the video base registers and
+ * the frame is displayed in the same frame. TOS sets the VsetRGB() palette
+ * in the same VBL.
+ */
+static void queueVbuffer(_THIS, void *screen)
+{
+	vbl_screen = screen;
+}
+
+static void vblTripleBuffer(void)
+{
+	if (vbl_screen) {
+		const Uint32 base = (Uint32) vbl_screen;
+
+		*((volatile Uint8 *) 0xFFFF8201) = base >> 16;
+		*((volatile Uint8 *) 0xFFFF8203) = base >> 8;
+		/* Must be written after the high and middle bytes */
+		*((volatile Uint8 *) 0xFFFF820D) = base;
+		vbl_screen = NULL;
+	}
 }

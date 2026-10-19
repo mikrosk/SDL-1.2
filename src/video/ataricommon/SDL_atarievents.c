@@ -41,6 +41,7 @@
 #include "SDL_atarikeys.h"
 #include "SDL_atarimch.h"
 #include "SDL_atarievents_c.h"
+#include "SDL_atarivectors_c.h"
 #include "SDL_xbiosevents_c.h"
 
 /* from src/audio/mint/SDL_mintaudio.c */
@@ -79,8 +80,6 @@ static short kstate;
 static SDL_VideoDevice *pump_device;
 static SDL_bool pump_relative_motion;
 static SDL_bool (*pump_mouse_focus)(_THIS);
-static void (*old_procterm)(void);
-static void (*restore_vectors)(void);
 
 /* Functions */
 
@@ -95,22 +94,6 @@ static int GetButton(int button)
 		default:
 			return SDL_BUTTON_LEFT;
 	}
-}
-
-static SDL_bool CheckAccess(const void *addr, size_t length)
-{
-	Uint32 flags;
-
-	if (Getcookie(C_MiNT, NULL) != C_FOUND)
-		return SDL_TRUE;
-
-	if (Mvalidate(0, addr, length, &flags) < 0)
-		return SDL_FALSE;
-
-	if (((flags+0x10)&0xf0) != MX_SUPERVISOR && ((flags+0x10)&0xf0) != MX_GLOBAL)
-		return SDL_FALSE;
-
-	return SDL_TRUE;
 }
 
 static SDL_bool IsIkbdSupported(void)
@@ -192,31 +175,16 @@ void SDL_Atari_InstallVectors(void (*install)(void), void (*restore)(void))
 
 	kstate = Kbshift(-1) & (K_RSHIFT | K_LSHIFT | K_CTRL | K_ALT | K_CAPSLOCK | K_ALTGR);
 
-	/* All the vectors write into this module's variables */
-	if (!CheckAccess((void *) SDL_Atari_queue, sizeof(SDL_Atari_queue))) {
+	SDL_Atari_vectors_installed = SDL_Atari_HookVectors(install, restore);
+	if (!SDL_Atari_vectors_installed) {
 		fprintf(stderr, "Insufficient privileges to install interrupt vectors. Set application's PRGFLAGS to Super.\n");
-		return;
 	}
-
-	Supexec(install);
-
-	restore_vectors = restore;
-	old_procterm = Setexc(VEC_PROCTERM, restore);
-
-	SDL_Atari_vectors_installed = SDL_TRUE;
 }
 
 void SDL_Atari_RestoreVectors(void)
 {
-	if (SDL_Atari_vectors_installed) {
-		Supexec(restore_vectors);
-		SDL_Atari_vectors_installed = SDL_FALSE;
-	}
-
-	if (old_procterm != NULL) {
-		Setexc(VEC_PROCTERM, old_procterm);
-		old_procterm = NULL;
-	}
+	SDL_Atari_UnhookVectors();
+	SDL_Atari_vectors_installed = SDL_FALSE;
 }
 
 /* Motion is posted before the next button or key event so ordering holds */
