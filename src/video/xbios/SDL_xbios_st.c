@@ -29,6 +29,7 @@
 
 #include <mint/cookie.h>
 #include <mint/osbind.h>
+#include <mint/sysvars.h>
 
 #include "../SDL_sysvideo.h"
 
@@ -39,6 +40,9 @@
 static const xbiosmode_t stmodes[]={
 	{ST_LOW>>8,320,200,4,XBIOSMODE_C2P}
 };
+
+/* Triple buffering: _vbclock when the last screen was queued */
+static Uint32 queued_vbclock;
 
 static void listModes(_THIS, int actually_add);
 static void saveMode(_THIS, SDL_PixelFormat *vformat);
@@ -52,7 +56,7 @@ static void swapVbuffers(_THIS);
 static int allocVbuffers(_THIS, const xbiosmode_t *new_video_mode, int num_buffers, int bufsize);
 static void freeVbuffers(_THIS);
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors);
-static void queueVbuffer(_THIS, void *screen);
+static SDL_bool queueVbuffer(_THIS, void *screen);
 
 void SDL_XBIOS_VideoInit_ST(_THIS, unsigned long cookie_cvdo)
 {
@@ -194,7 +198,21 @@ static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 	return(1);
 }
 
-static void queueVbuffer(_THIS, void *screen)
+/*
+ * Triple buffering: the Shifter takes the video base itself, a few lines
+ * before the VBL, so locking the VBL wouldn't hold it back. _vbclock is read
+ * right before Setscreen(): the previously queued screen is taken for not
+ * displayed only if the Shifter takes it in between or just before the VBL.
+ */
+static SDL_bool queueVbuffer(_THIS, void *screen)
 {
+	const Uint32 vbclock = get_sysvar(_vbclock);
+	SDL_bool displayed;
+
 	Setscreen(-1,screen,-1);
+
+	displayed = (vbclock != queued_vbclock);
+	queued_vbclock = vbclock;
+
+	return displayed;
 }

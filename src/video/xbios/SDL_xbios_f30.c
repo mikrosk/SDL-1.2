@@ -117,15 +117,17 @@ static const xbiosmode_t sv_modes[]={
 
 static int has_supervidel;
 
-/* Triple buffering: video base to set in the next VBL */
+/* Triple buffering: video base to set in the next VBL and the one set in
+   the last VBL */
 static void * volatile vbl_screen;
+static void * volatile vbl_shown;
 
 static void listModes(_THIS, int actually_add);
 static void saveMode(_THIS, SDL_PixelFormat *vformat);
 static void setMode(_THIS, const xbiosmode_t *new_video_mode);
 static void restoreMode(_THIS);
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors);
-static void queueVbuffer(_THIS, void *screen);
+static SDL_bool queueVbuffer(_THIS, void *screen);
 static void vblTripleBuffer(void);
 
 static int allocVbuffers_SV(_THIS, const xbiosmode_t *new_video_mode, int num_buffers, int bufsize);
@@ -318,21 +320,30 @@ static int allocVbuffers_SV(_THIS, const xbiosmode_t *new_video_mode, int num_bu
  * after the VBL, so a VBL queue handler writes the video base registers and
  * the frame is displayed in the same frame. TOS sets the VsetRGB() palette
  * in the same VBL.
+ *
+ * No VBL lock is needed: a single store replaces the queued screen, so the
+ * VBL handler sets either the previously queued screen or this one. Once it
+ * has set any of them, the front buffer isn't displayed anymore.
  */
-static void queueVbuffer(_THIS, void *screen)
+static SDL_bool queueVbuffer(_THIS, void *screen)
 {
 	vbl_screen = screen;
+
+	return (vbl_shown != XBIOS_screens[XBIOS_fbfront]);
 }
 
 static void vblTripleBuffer(void)
 {
-	if (vbl_screen) {
-		const Uint32 base = (Uint32) vbl_screen;
+	void *const screen = vbl_screen;
+
+	if (screen) {
+		const Uint32 base = (Uint32) screen;
 
 		*((volatile Uint8 *) 0xFFFF8201) = base >> 16;
 		*((volatile Uint8 *) 0xFFFF8203) = base >> 8;
 		/* Must be written after the high and middle bytes */
 		*((volatile Uint8 *) 0xFFFF820D) = base;
+		vbl_shown = screen;
 		vbl_screen = NULL;
 	}
 }

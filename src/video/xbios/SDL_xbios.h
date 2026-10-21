@@ -71,7 +71,6 @@ struct SDL_PrivateVideoData {
 	int frame_work;			/* Frame being drawn */
 	int frame_queued;		/* Triple buffer: most recently flipped frame */
 	int frame_front;		/* Triple buffer: frame displayed before it */
-	Uint32 queued_vbclock;		/* Triple buffer: _vbclock when frame_queued was queued */
 	SDL_bool triple_buffer;		/* Triple buffering supported, cleared by a mode not using it */
 	int pitch;			/* Destination line width for C2P */
 
@@ -96,7 +95,7 @@ struct SDL_PrivateVideoData {
 	int (*allocVbuffers)(_THIS, const xbiosmode_t *new_video_mode, int num_buffers, int bufsize);	/* Allocate video buffers */
 	void (*freeVbuffers)(_THIS);	/* Free video buffers */
 	void (*vblTripleBuffer)(void);	/* VBL handler for triple buffering, NULL if none is needed */
-	void (*queueVbuffer)(_THIS, void *screen);	/* Display screen as soon as possible; VBL locked */
+	SDL_bool (*queueVbuffer)(_THIS, void *screen);	/* Display screen as soon as possible, return whether the previously queued one has been displayed */
 
 	void (*updRects)(_THIS, int numrects, SDL_Rect *rects);	/* updateRects to use when video ready */
 };
@@ -136,7 +135,6 @@ enum {
 #define XBIOS_fbwork		(this->hidden->frame_work)
 #define XBIOS_fbqueued		(this->hidden->frame_queued)
 #define XBIOS_fbfront		(this->hidden->frame_front)
-#define XBIOS_queuedVbclock	(this->hidden->queued_vbclock)
 #define XBIOS_tripleBuffer	(this->hidden->triple_buffer)
 #define XBIOS_pitch		(this->hidden->pitch)
 #define XBIOS_current		(this->hidden->current)

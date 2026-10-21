@@ -35,7 +35,6 @@
 #include <mint/falcon.h>
 #include <mint/osbind.h>
 #include <mint/ostruct.h>
-#include <mint/sysvars.h>
 
 #include "SDL_video.h"
 #include "../SDL_sysvideo.h"
@@ -90,8 +89,6 @@ static void XBIOS_UpdateRects(_THIS, int numrects, SDL_Rect *rects);
 /* OpenGL functions */
 static void XBIOS_GL_SwapBuffers(_THIS);
 #endif
-
-static SDL_bool XBIOS_QueueFrame(_THIS);
 
 static SDL_bool shadow_warning_shown;
 
@@ -564,8 +561,7 @@ static SDL_Surface *XBIOS_SetVideoMode(_THIS, SDL_Surface *current,
 	 * so these can't be the same buffers if double buffering has been requested.
 	 */
 	if (num_buffers == 3) {
-		XBIOS_fbwork = 0;
-		XBIOS_QueueFrame(this);
+		XBIOS_queueVbuffer(this, XBIOS_screens[0]);
 
 		XBIOS_tripleBuffer = (!XBIOS_vblTripleBuffer || SDL_Atari_HookVbl(XBIOS_vblTripleBuffer));
 	} else {
@@ -644,33 +640,13 @@ static void XBIOS_UnlockHWSurface(_THIS, SDL_Surface *surface)
 	return;
 }
 
-/* Queue XBIOS_screens[XBIOS_fbwork], return whether the previously queued
-   frame has been displayed */
-static SDL_bool XBIOS_QueueFrame(_THIS)
-{
-	SDL_bool displayed;
-	Uint32 vbclock;
-
-	set_sysvar_to_short(vblsem, 0);
-
-	vbclock = get_sysvar(_vbclock);
-	XBIOS_queueVbuffer(this, XBIOS_screens[XBIOS_fbwork]);
-
-	set_sysvar_to_short(vblsem, 1);
-
-	displayed = (vbclock != XBIOS_queuedVbclock);
-	XBIOS_queuedVbclock = vbclock;
-
-	return displayed;
-}
-
 /* Display XBIOS_screens[XBIOS_fbwork] and continue with another buffer */
 static void XBIOS_FlipBuffers(_THIS, SDL_Surface *surface)
 {
 	if (XBIOS_tripleBuffer) {
 		const int work = XBIOS_fbwork;
 
-		if (XBIOS_QueueFrame(this)) {
+		if (XBIOS_queueVbuffer(this, XBIOS_screens[work])) {
 			/* The queued frame is displayed: the front buffer is free */
 			XBIOS_fbwork = XBIOS_fbfront;
 			XBIOS_fbfront = XBIOS_fbqueued;
