@@ -41,6 +41,7 @@
 #include "SDL_atarikeys.h"
 #include "SDL_atarimch.h"
 #include "SDL_atarievents_c.h"
+#include "SDL_atariprocterm_c.h"
 #include "SDL_xbiosevents_c.h"
 
 /* from src/audio/mint/SDL_mintaudio.c */
@@ -79,7 +80,6 @@ static short kstate;
 static SDL_VideoDevice *pump_device;
 static SDL_bool pump_relative_motion;
 static SDL_bool (*pump_mouse_focus)(_THIS);
-static void (*old_procterm)(void);
 static void (*restore_vectors)(void);
 
 /* Functions */
@@ -198,24 +198,22 @@ void SDL_Atari_InstallVectors(void (*install)(void), void (*restore)(void))
 		return;
 	}
 
+	if (!SDL_Atari_AddProcterm(restore)) {
+		return;
+	}
+
 	Supexec(install);
 
 	restore_vectors = restore;
-	old_procterm = Setexc(VEC_PROCTERM, restore);
-
 	SDL_Atari_vectors_installed = SDL_TRUE;
 }
 
 void SDL_Atari_RestoreVectors(void)
 {
 	if (SDL_Atari_vectors_installed) {
+		SDL_Atari_RemoveProcterm(restore_vectors);
 		Supexec(restore_vectors);
 		SDL_Atari_vectors_installed = SDL_FALSE;
-	}
-
-	if (old_procterm != NULL) {
-		Setexc(VEC_PROCTERM, old_procterm);
-		old_procterm = NULL;
 	}
 }
 
