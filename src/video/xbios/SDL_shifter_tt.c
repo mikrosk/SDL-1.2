@@ -44,6 +44,25 @@ static void flipVbuffers(_THIS)
 	}
 }
 
+static void flipTriple(_THIS)
+{
+	const Uint32 oldest = (Uint32) XBIOS_screens[2];
+	const int doubleline = (XBIOS_current->flags & XBIOSMODE_DOUBLELINE ? 1 : 0);
+	const Uint32 screensize = XBIOS_pitch * (XBIOS_current->height << doubleline);
+
+	/* Replaces the buffer set last if the video counter hasn't been reloaded from it yet */
+	XBIOS_swapVbuffers(this);
+
+	/* At most one frame per VBL; the oldest buffer is free once the video counter has left it */
+	while (!SDL_Shifter_vblcount || SDL_Shifter_counter - oldest < screensize) {
+		XBIOS_vsync(this);
+	}
+	SDL_Shifter_vblcount = 0;
+
+	XBIOS_screens[2] = XBIOS_screens[XBIOS_fbnum ^ 1];
+	XBIOS_screens[XBIOS_fbnum ^ 1] = (void *) oldest;
+}
+
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 {
 	const int count = SDL_Shifter_palcount;
@@ -77,5 +96,6 @@ void SDL_SHIFTER_VideoInit_TT(_THIS)
 	SDL_Shifter_vbl = SDL_Shifter_VblTT;
 
 	XBIOS_flipVbuffers = flipVbuffers;
+	XBIOS_flipTriple = flipTriple;
 	this->SetColors = setColors;
 }

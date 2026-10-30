@@ -30,7 +30,6 @@
 
 extern void SDL_Shifter_VblF30(void);
 
-volatile Uint32 SDL_Shifter_pending;	/* video base address for the VBL handler to set, 0 if none */
 Uint32 SDL_Shifter_paletteF30[256];	/* read by the VBL handler */
 
 /* See SDL_XBIOS_VideoInit_F30() */
@@ -69,6 +68,25 @@ static void flipVbuffers(_THIS)
 	}
 }
 
+static void flipTriple(_THIS)
+{
+	const Uint32 oldest = (Uint32) XBIOS_screens[2];
+	/* The oldest buffer is still shown if the handler hasn't written the one set last */
+	const SDL_bool shown = (SDL_Shifter_pending != 0);
+
+	/* Replaces the buffer set last if the handler hasn't written it yet */
+	SDL_Shifter_pending = (Uint32) XBIOS_screens[XBIOS_fbnum];
+
+	/* At most one frame per VBL; a shown oldest buffer is free once the handler has written this one */
+	while (!SDL_Shifter_vblcount || (shown && SDL_Shifter_pending)) {
+		XBIOS_vsync(this);
+	}
+	SDL_Shifter_vblcount = 0;
+
+	XBIOS_screens[2] = XBIOS_screens[XBIOS_fbnum ^ 1];
+	XBIOS_screens[XBIOS_fbnum ^ 1] = (void *) oldest;
+}
+
 static int setColors(_THIS, int firstcolor, int ncolors, SDL_Color *colors)
 {
 	const int count = SDL_Shifter_palcount;
@@ -103,5 +121,6 @@ void SDL_SHIFTER_VideoInit_F30(_THIS)
 	SDL_Shifter_vbl = SDL_Shifter_VblF30;
 
 	XBIOS_flipVbuffers = flipVbuffers;
+	XBIOS_flipTriple = flipTriple;
 	this->SetColors = setColors;
 }

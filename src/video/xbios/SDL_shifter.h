@@ -28,6 +28,8 @@
 
 /* Private display data */
 
+extern volatile Uint32 SDL_Shifter_vblcount;	/* VBLs since the last triple buffer flip */
+extern volatile Uint32 SDL_Shifter_pending;	/* video base address for the VBL handler to set, 0 if none */
 extern volatile Uint16 SDL_Shifter_palcount;	/* colours to write, 0 if none */
 extern Uint16 SDL_Shifter_palfirst;
 
